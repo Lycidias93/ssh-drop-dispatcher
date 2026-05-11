@@ -89,3 +89,11 @@ The module watches a local Android drop directory. File names contain target mar
 - Event based scan support
 - Watchdog supported runtime supervision
 - No bundled private target definitions
+
+## Interactive setup wizard
+
+RC2 adds a setup wizard:
+
+su -c "/data/adb/modules/ssh_drop_dispatcher/service.sh --setup-target"
+
+The wizard walks the user through SSH target setup, SSH key generation, SSH config creation, optional authorized_keys installation, remote drop directory creation and a smoke test.

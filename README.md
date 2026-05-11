@@ -64,3 +64,11 @@ Credits:
 - Duplicate processing protection
 - Manual and event-based scans
 - No bundled private target definitions
+
+## Interactive setup
+
+After installing and rebooting, run:
+
+su -c "/data/adb/modules/ssh_drop_dispatcher/service.sh --setup-target"
+
+The wizard creates an SSH key, configures an SSH alias, creates a dispatcher target config, prepares the remote drop directory and runs a smoke test.

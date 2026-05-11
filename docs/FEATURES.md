@@ -4,6 +4,12 @@ SSH Drop Dispatcher is an Android/Magisk file-drop dispatcher for routing files 
 
 ## Core features
 
+- Interactive SSH target setup wizard
+- SSH key generation
+- SSH config generation
+- Optional public key installation on target host
+- Remote drop directory creation
+
 - Android/Magisk based dispatcher service
 - Filename-based routing
 - Single-target dispatch

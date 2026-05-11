@@ -140,3 +140,37 @@ Remove the module in Magisk and reboot.
 After uninstall, manually remove runtime data only if you no longer need logs or state:
 
 su -c "rm -rf /data/adb/ssh-drop-dispatcher"
+## Interactive setup wizard
+
+After installing the module and rebooting, run:
+
+su -c "/data/adb/modules/ssh_drop_dispatcher/service.sh --setup-target"
+
+The wizard guides you through:
+
+- target name
+- SSH host or IP
+- SSH user
+- SSH port
+- SSH key generation
+- SSH config creation
+- optional public key installation
+- remote drop directory creation
+- dispatcher target config creation
+- SSH smoke test
+
+The wizard creates an SSH key at:
+
+/data/adb/ssh-drop-dispatcher/ssh/id_ed25519
+
+It creates target config files under:
+
+/data/adb/ssh-drop-dispatcher/config/targets.d
+
+Example resulting target:
+
+/data/adb/ssh-drop-dispatcher/config/targets.d/alpha.conf
+
+After setup, test file routing with:
+
+target-alpha__hello.txt

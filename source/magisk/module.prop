@@ -1,7 +1,7 @@
 id=ssh_drop_dispatcher
 name=SSH Drop Dispatcher
-version=4.10.0-rc1
-versionCode=4100001
+version=4.10.0-rc2
+versionCode=4100002
 author=SSH Drop Dispatcher Contributors
-description=Android/Magisk file-drop dispatcher for routing files to configured SSH targets by filename markers
+description=Android/Magisk file-drop dispatcher with interactive SSH target setup and filename based routing
 updateJson=https://raw.githubusercontent.com/Lycidias93/ssh-drop-dispatcher/main/update-rc.json
