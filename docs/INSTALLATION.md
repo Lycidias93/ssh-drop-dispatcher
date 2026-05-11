@@ -174,3 +174,25 @@ Example resulting target:
 After setup, test file routing with:
 
 target-alpha__hello.txt
+
+## Initial setup wizard
+
+After installing the module and rebooting, run:
+
+su -c "/data/adb/modules/ssh_drop_dispatcher/service.sh --setup"
+
+The initial setup wizard asks for the local scan directory.
+
+Default:
+
+/storage/emulated/0/Download
+
+The directory is created if needed and must be readable and writable. The selected path is written to:
+
+/data/adb/ssh-drop-dispatcher/config.env
+
+The wizard then offers to continue with SSH target setup.
+
+For additional targets later, run:
+
+su -c "/data/adb/modules/ssh_drop_dispatcher/service.sh --setup-target"

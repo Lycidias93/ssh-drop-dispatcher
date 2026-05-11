@@ -90,3 +90,25 @@ Use a persistent directory for real deployments.
 3. Create target-alpha__hello.txt in the watched drop directory.
 4. Confirm that the file appears in the remote drop directory.
 5. Check runtime status and dispatch logs.
+
+## Local scan directory
+
+The local scan directory is the Android directory watched by the dispatcher.
+
+Default:
+
+/storage/emulated/0/Download
+
+It can be configured interactively with:
+
+su -c "/data/adb/modules/ssh_drop_dispatcher/service.sh --setup"
+
+The selected value is stored in:
+
+/data/adb/ssh-drop-dispatcher/config.env
+
+Example:
+
+SCAN_DIR=/storage/emulated/0/Download
+
+The scan directory is global for the dispatcher. Remote drop directories are configured per target.

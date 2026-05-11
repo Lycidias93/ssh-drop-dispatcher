@@ -19,3 +19,12 @@
 - Added target config generation.
 - Added setup smoke test.
 - Updated installation, feature and XDA documentation.
+
+## 4.10.0-rc3
+
+- Added interactive initial setup wizard.
+- Added local scan directory selection.
+- Kept /storage/emulated/0/Download as the default scan directory.
+- Writes SCAN_DIR to runtime config.env.
+- Initial setup can continue into SSH target setup.
+- Updated README, installation, configuration, features and XDA documentation.

@@ -97,3 +97,11 @@ RC2 adds a setup wizard:
 su -c "/data/adb/modules/ssh_drop_dispatcher/service.sh --setup-target"
 
 The wizard walks the user through SSH target setup, SSH key generation, SSH config creation, optional authorized_keys installation, remote drop directory creation and a smoke test.
+
+## RC3 adds initial scan directory setup
+
+RC3 adds the initial setup command:
+
+su -c "/data/adb/modules/ssh_drop_dispatcher/service.sh --setup"
+
+The wizard lets the user choose the local scan directory. The default remains /storage/emulated/0/Download. After that it can continue into SSH target setup.

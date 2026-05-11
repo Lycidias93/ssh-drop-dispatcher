@@ -695,6 +695,15 @@ case "${1:-}" in
   --runtime-status)
     wait_boot; import_bundle_if_needed; load_config || exit 1; runtime_status
     ;;
+  --setup)
+    if [ -x "$MODULE_TOOLS_DIR/sdd-setup.sh" ]; then
+      "$MODULE_TOOLS_DIR/sdd-setup.sh"
+      exit $?
+    fi
+    echo "missing setup tool: $MODULE_TOOLS_DIR/sdd-setup.sh"
+    exit 1
+    ;;
+
   --setup-target)
     if [ -x "$MODULE_TOOLS_DIR/sdd-setup-target.sh" ]; then
       "$MODULE_TOOLS_DIR/sdd-setup-target.sh"

@@ -72,3 +72,19 @@ After installing and rebooting, run:
 su -c "/data/adb/modules/ssh_drop_dispatcher/service.sh --setup-target"
 
 The wizard creates an SSH key, configures an SSH alias, creates a dispatcher target config, prepares the remote drop directory and runs a smoke test.
+
+## Initial setup
+
+After installing and rebooting, run:
+
+su -c "/data/adb/modules/ssh_drop_dispatcher/service.sh --setup"
+
+The initial setup wizard asks for the local scan directory. The default is:
+
+/storage/emulated/0/Download
+
+You can keep the default or choose a different local directory. The wizard writes the selected path to:
+
+/data/adb/ssh-drop-dispatcher/config.env
+
+After that, the wizard can start the SSH target setup.

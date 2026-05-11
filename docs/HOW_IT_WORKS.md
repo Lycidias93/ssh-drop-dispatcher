@@ -145,3 +145,13 @@ If event watching misses something, fallback scans can still process files.
 The public RC does not include private targets, private hostnames, private IPs, SSH keys, personal device names or home-network paths.
 
 You must configure your own targets.
+
+## Local scan directory
+
+The dispatcher watches one local scan directory on Android.
+
+Default:
+
+/storage/emulated/0/Download
+
+The initial setup wizard can change this value. The configured scan directory is global. Target-specific remote drop directories are configured separately per target.
