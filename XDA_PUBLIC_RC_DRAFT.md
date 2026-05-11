@@ -60,3 +60,32 @@ GitHub:
 - Neutralized module metadata.
 - Added online update metadata.
 - Removed bundled private target configuration.
+## Installation summary
+
+1. Install the Magisk ZIP.
+2. Reboot.
+3. Configure your own SSH target files.
+4. Test SSH from Termux.
+5. Drop a file named target-alpha__example.txt into the watched directory.
+6. Check the remote drop directory and runtime status.
+
+## How it works summary
+
+The module watches a local Android drop directory. File names contain target markers. The dispatcher resolves configured targets and uploads matching files to their remote drop directories over SSH/SCP. Processing is tracked in runtime state files and can be checked with runtime-status and doctor commands.
+## Feature details
+
+- Android/Magisk based service
+- Filename based routing
+- Single target dispatch
+- Multi target dispatch
+- SSH/SCP upload to configured targets
+- Runtime health checks
+- Doctor command
+- Config list command
+- Target registry files
+- Dispatch state tracking
+- In-flight, done, complete, quarantine and failure records
+- Manual scan support
+- Event based scan support
+- Watchdog supported runtime supervision
+- No bundled private target definitions
