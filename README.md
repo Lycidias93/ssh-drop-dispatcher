@@ -3,7 +3,7 @@
 SSH Drop Dispatcher is an Android/Magisk file-drop dispatcher that routes files to configured SSH targets based on filename markers.
 
 Status:
-Public release candidate: 4.10.0-rc1
+Public release candidate: 4.10.0-rc3
 
 What it does:
 - Watches a local Android drop directory
@@ -38,6 +38,13 @@ The public package must not include personal hostnames, private IPs, private pat
 Credits:
 - SSH Drop Dispatcher Contributors
 - Android, Magisk, Termux and XDA communities
+
+## Public/private boundary
+
+This repository is the public release channel for the generic SSH Drop Dispatcher package.
+Private production runtimes, private target definitions, host aliases, device inventory and local configuration are maintained outside this public repository.
+Do not infer private runtime state from this public repository.
+
 ## Documentation
 
 - Installation: docs/INSTALLATION.md
@@ -47,7 +54,7 @@ Credits:
 - XDA draft: XDA_PUBLIC_RC_DRAFT.md
 ## Quick install
 
-1. Download ssh-drop-dispatcher-magisk-v4.10.0-rc1.zip from the release.
+1. Download ssh-drop-dispatcher-magisk-v4.10.0-rc3.zip from the release.
 2. Install it through Magisk.
 3. Reboot Android.
 4. Configure your own target files under /data/adb/ssh-drop-dispatcher/config/targets.d.
