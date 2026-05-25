@@ -1,7 +1,7 @@
 #!/system/bin/sh
 set -eu
 
-STATE_DIR=${PIDD_STATE_DIR:-/data/adb/ssh-drop-dispatcher}
+STATE_DIR=${SDD_STATE_DIR:-/data/adb/ssh-drop-dispatcher}
 MODDIR=${0%/tools/sdd-setup-target.sh}
 TARGET_DIR="$STATE_DIR/config/targets.d"
 SSH_DIR="$STATE_DIR/ssh"
@@ -175,6 +175,8 @@ echo "== write target config =="
 target_conf="$TARGET_DIR/$target.conf"
 cat > "$target_conf" <<EOF
 enabled=1
+target_name=$target
+ssh_host=$alias_name
 host=$alias_name
 remote_drop=$remote_drop
 platform=linux

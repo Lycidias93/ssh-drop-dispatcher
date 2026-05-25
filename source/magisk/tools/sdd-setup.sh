@@ -86,6 +86,7 @@ echo "scan_dir_ok=$scan_dir"
 echo
 echo "== write runtime config =="
 mkdir -p "$STATE_DIR"
+write_or_replace_config_key "DROP_DISPATCH_SCAN_DIR" "$scan_dir" "$CONFIG_ENV"
 write_or_replace_config_key "SCAN_DIR" "$scan_dir" "$CONFIG_ENV"
 
 if ! grep -q '^KEEP_LOCAL=' "$CONFIG_ENV"; then

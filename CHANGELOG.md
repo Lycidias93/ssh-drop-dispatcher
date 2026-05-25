@@ -1,3 +1,18 @@
+<!-- SDD_V4110_RC1_WIZARD_WEBUI_START -->
+## 4.11.0-rc1 - public vNext RC
+
+- Switches public vNext ownership metadata to `Lycidias93`.
+- Adds `dispatch-config` interactive wizard as the primary setup entrypoint.
+- Installs/removes the Termux command `dispatch-config`.
+- Adds backup/export ZIP and restore/import ZIP support with optional private SSH keys behind explicit confirmation.
+- Adds local private-runtime migration into the public runtime.
+- Adds reset-to-default config support.
+- Adds redacted xda/GitHub issue file export.
+- Adds WebUI assets and Magisk action fallback.
+- Adds Magisk online RC update metadata through `update-rc.json`.
+- Keeps public release free of private targets, private IPs, private paths and private keys.
+<!-- SDD_V4110_RC1_WIZARD_WEBUI_END -->
+
 # Changelog
 
 ## 4.10.0-rc1

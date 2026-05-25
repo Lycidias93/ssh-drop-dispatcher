@@ -1,198 +1,36 @@
-# Installation Guide
-
-This guide explains how to install SSH Drop Dispatcher on a rooted Android device.
-
-## Status
-
-Version: 4.10.0-rc1
-Module ID: ssh_drop_dispatcher
-Runtime directory: /data/adb/ssh-drop-dispatcher
-
-This is a public release candidate. Test it on a non-critical setup first.
+# Installation
 
 ## Requirements
 
 - Rooted Android device
-- Magisk
+- Magisk-compatible module manager
 - Termux
-- SSH client available in Termux
+- Termux package `openssh`
 - SSH access to your own target host
-- A target directory on the remote host where files should be uploaded
 
-## Files
+## Install
 
-Download the Magisk ZIP from the GitHub release:
+1. Download `ssh-drop-dispatcher-magisk-v4.11.0-rc1.zip` from the GitHub release.
+2. Flash it in Magisk.
+3. Reboot Android.
+4. Open Termux and run:
 
-- ssh-drop-dispatcher-magisk-v4.10.0-rc1.zip
+```sh
+dispatch-config
+```
 
-Optional verification files:
+Fallback:
 
-- SHA256SUMS
-- ssh-drop-dispatcher-magisk-v4.10.0-rc1.zip.b64
+```sh
+su -c /data/adb/ssh-drop-dispatcher/bin/dispatch-config
+```
 
-## Install with Magisk
+## Online updates
 
-1. Open Magisk.
-2. Go to Modules.
-3. Install from storage.
-4. Select ssh-drop-dispatcher-magisk-v4.10.0-rc1.zip.
-5. Reboot Android.
+The RC channel uses:
 
-After reboot, the module runtime should exist at:
+```text
+https://raw.githubusercontent.com/Lycidias93/ssh-drop-dispatcher/main/update-rc.json
+```
 
-/data/adb/ssh-drop-dispatcher
-
-## Termux preparation
-
-Install an SSH client in Termux if needed:
-
-pkg update
-pkg install openssh
-
-Verify SSH access to your target host before configuring the dispatcher:
-
-ssh your-target-host
-
-## Configure targets
-
-The public RC does not include private targets.
-
-Create target config files in:
-
-/data/adb/ssh-drop-dispatcher/config/targets.d
-
-Example target file:
-
-/data/adb/ssh-drop-dispatcher/config/targets.d/alpha.conf
-
-Recommended fields:
-
-enabled=1
-host=alpha
-remote_drop=/tmp/ssh-drop-dispatcher-drop
-platform=linux
-shell=bash
-verify=generic
-role=example
-
-Use your own host names and remote paths.
-
-## Filename routing
-
-Single target:
-
-target-alpha__example.txt
-
-Multi target:
-
-targets-alpha-beta__example.txt
-
-The target name in the filename must match the configured target name.
-
-## Runtime checks
-
-Run:
-
-su -c "/data/adb/modules/ssh_drop_dispatcher/service.sh --runtime-status"
-
-Run doctor:
-
-su -c "/data/adb/modules/ssh_drop_dispatcher/service.sh --doctor"
-
-List config:
-
-su -c "/data/adb/modules/ssh_drop_dispatcher/service.sh --config-list"
-
-## Basic smoke test
-
-1. Create a test file in the watched Android drop directory.
-2. Use a target marker in the filename.
-3. Wait for the dispatcher to process it.
-4. Check the remote drop directory on the target host.
-5. Check runtime status and dispatch logs.
-
-Example filename:
-
-target-alpha__hello.txt
-
-## Troubleshooting
-
-If files are not uploaded:
-
-- Check that the service is running.
-- Check that the target name matches the filename marker.
-- Check SSH access from Termux.
-- Check that the remote directory exists.
-- Check runtime status.
-- Run doctor.
-- Check dispatch logs.
-
-Useful commands:
-
-su -c "/data/adb/modules/ssh_drop_dispatcher/service.sh --runtime-status"
-su -c "/data/adb/modules/ssh_drop_dispatcher/service.sh --doctor"
-su -c "tail -n 120 /data/adb/ssh-drop-dispatcher/log/dispatch.log"
-
-## Uninstall
-
-Remove the module in Magisk and reboot.
-
-After uninstall, manually remove runtime data only if you no longer need logs or state:
-
-su -c "rm -rf /data/adb/ssh-drop-dispatcher"
-## Interactive setup wizard
-
-After installing the module and rebooting, run:
-
-su -c "/data/adb/modules/ssh_drop_dispatcher/service.sh --setup-target"
-
-The wizard guides you through:
-
-- target name
-- SSH host or IP
-- SSH user
-- SSH port
-- SSH key generation
-- SSH config creation
-- optional public key installation
-- remote drop directory creation
-- dispatcher target config creation
-- SSH smoke test
-
-The wizard creates an SSH key at:
-
-/data/adb/ssh-drop-dispatcher/ssh/id_ed25519
-
-It creates target config files under:
-
-/data/adb/ssh-drop-dispatcher/config/targets.d
-
-Example resulting target:
-
-/data/adb/ssh-drop-dispatcher/config/targets.d/alpha.conf
-
-After setup, test file routing with:
-
-target-alpha__hello.txt
-
-## Initial setup wizard
-
-After installing the module and rebooting, run:
-
-su -c "/data/adb/modules/ssh_drop_dispatcher/service.sh --setup"
-
-The initial setup wizard asks for the local scan directory.
-
-Default:
-
-/storage/emulated/0/Download
-
-The directory is created if needed and must be readable and writable. The selected path is written to:
-
-/data/adb/ssh-drop-dispatcher/config.env
-
-The wizard then offers to continue with SSH target setup.
-
-For additional targets later, run:
-
-su -c "/data/adb/modules/ssh_drop_dispatcher/service.sh --setup-target"
+Stable releases use `update.json`.

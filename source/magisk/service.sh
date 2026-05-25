@@ -31,7 +31,7 @@ LAST_SCAN_FILE=$STATE_DIR/.last_scan
 LAST_EVENT_FILE=$STATE_DIR/.last_event
 TMP_SCAN_LIST=$STATE_DIR/.scan.list
 TMP_PENDING_LIST=$STATE_DIR/.scan.pending
-PIDD_POLICY_VERSION=v4102
+PIDD_POLICY_VERSION=v4115
 
 SSH_BIN_DEFAULT=/data/data/com.termux/files/usr/bin/ssh
 BASH_BIN_DEFAULT=/data/data/com.termux/files/usr/bin/bash
@@ -245,7 +245,7 @@ import_bundle_if_needed(){
 load_config(){
   [ -f "$CONFIG_FILE" ] || return 1
   . "$CONFIG_FILE"
-  DROP_DISPATCH_SCAN_DIR=${DROP_DISPATCH_SCAN_DIR:-/storage/emulated/0/Download}
+  DROP_DISPATCH_SCAN_DIR=${DROP_DISPATCH_SCAN_DIR:-${SCAN_DIR:-/storage/emulated/0/Download}}
   DROP_DISPATCH_SETTLE_SECONDS=${DROP_DISPATCH_SETTLE_SECONDS:-2}
   DROP_DISPATCH_FALLBACK_RESCAN_SECONDS=${DROP_DISPATCH_FALLBACK_RESCAN_SECONDS:-1800}
   DROP_DISPATCH_LOG_SKIP_COMPLETE=${DROP_DISPATCH_LOG_SKIP_COMPLETE:-0}
@@ -268,7 +268,7 @@ load_config(){
 
 ensure_ssh_ready(){
   [ -x "$SSH_BIN" ] && [ -x "$SCP_BIN" ] || { log "WAIT missing Termux ssh binary"; health WARN missing_termux_ssh_binary; return 1; }
-  [ -f "$SSH_DIR/id_drop_dispatch_ed25519" ] || { log "WAIT missing dispatch private key"; health WARN missing_dispatch_key; return 1; }
+  { [ -f "$SSH_DIR/id_ed25519" ] || [ -f "$SSH_DIR/id_rsa" ] || [ -f "$SSH_DIR/id_drop_dispatch_ed25519" ]; } || { log "WAIT missing dispatch private key"; health WARN missing_dispatch_key; return 1; }
   [ -f "$RUNTIME_SSH_CONFIG" ] || { log "WAIT missing runtime ssh config"; health WARN missing_runtime_ssh_config; return 1; }
 }
 
@@ -589,7 +589,7 @@ runtime_status(){
   $GREP_BIN -E "^(version=|versionCode=)" "$MODDIR/module.prop" 2>/dev/null || true
   registry_summary
   echo "== tools =="
-  for x in pidd-config.sh pidd-doctor.sh pidd-health.sh pidd-migrate-config.sh; do
+  for x in dispatch-config.sh pidd-config.sh pidd-doctor.sh pidd-health.sh pidd-migrate-config.sh; do
     [ -x "$TOOLS_DIR/$x" ] && echo "$x=ok" || echo "$x=missing"
   done
   echo "== health =="
@@ -695,6 +695,15 @@ case "${1:-}" in
   --runtime-status)
     wait_boot; import_bundle_if_needed; load_config || exit 1; runtime_status
     ;;
+  --dispatch-config)
+    shift
+    wait_boot; import_bundle_if_needed
+    if [ -x "$TOOLS_DIR/dispatch-config.sh" ]; then "$TOOLS_DIR/dispatch-config.sh" "$@"; exit $?; fi
+    if [ -x "$MODULE_TOOLS_DIR/dispatch-config.sh" ]; then "$MODULE_TOOLS_DIR/dispatch-config.sh" "$@"; exit $?; fi
+    echo "dispatch_config_tool=missing"
+    exit 1
+    ;;
+
   --setup)
     if [ -x "$MODULE_TOOLS_DIR/sdd-setup.sh" ]; then
       "$MODULE_TOOLS_DIR/sdd-setup.sh"

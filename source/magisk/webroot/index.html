@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SSH Drop Dispatcher</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <h1>SSH Drop Dispatcher</h1>
+      <p>Public Magisk dispatcher with <code>dispatch-config</code>, backup/restore and support issue export.</p>
+    </section>
+    <section class="grid">
+      <button data-cmd="/data/adb/modules/ssh_drop_dispatcher/service.sh --runtime-status">Runtime status</button>
+      <button data-cmd="/data/adb/modules/ssh_drop_dispatcher/service.sh --doctor">Doctor</button>
+      <button data-cmd="/data/adb/modules/ssh_drop_dispatcher/service.sh --config-list">Config list</button>
+      <button data-cmd="/data/adb/ssh-drop-dispatcher/bin/dispatch-config install-termux-command">Install Termux command</button>
+      <button data-cmd="/data/adb/ssh-drop-dispatcher/bin/dispatch-config remove-termux-command">Remove Termux command</button>
+      <button data-cmd="/data/adb/ssh-drop-dispatcher/bin/dispatch-config issue">Create issue.txt</button>
+    </section>
+    <section>
+      <h2>Termux</h2>
+      <p>Open Termux and run:</p>
+      <pre>dispatch-config</pre>
+    </section>
+    <section>
+      <h2>Output</h2>
+      <pre id="output">WebUI ready. If root exec is unavailable in your manager, use Termux: dispatch-config</pre>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
