@@ -34,3 +34,8 @@ https://raw.githubusercontent.com/Lycidias93/ssh-drop-dispatcher/main/update-rc.
 ```
 
 Stable releases use `update.json`.
+
+## Before replacing a private runtime
+
+Do not disable or remove the private dispatcher until a public-format backup ZIP has been created and verified.
+Use `dispatch-config export-private-runtime` to create the ZIP, then import it into the public runtime only when you are ready to switch over.

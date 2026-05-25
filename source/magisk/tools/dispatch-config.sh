@@ -17,7 +17,7 @@ TERMUX_BIN=/data/data/com.termux/files/usr/bin
 TERMUX_CMD=$TERMUX_BIN/dispatch-config
 DEFAULT_SCAN_DIR=/storage/emulated/0/Download
 DEFAULT_REMOTE_DROP=/tmp/ssh-drop-dispatcher-drop
-VERSION=4.11.0-rc1
+VERSION=4.11.0-rc2
 
 mkdir -p "$CONFIG_DIR" "$TARGET_DIR" "$SSH_DIR" "$BACKUP_DIR" "$RUNTIME_BIN" "$DOWNLOAD_DIR" >/dev/null 2>&1 || true
 
@@ -252,7 +252,7 @@ backup_export(){
   if [ -d "$TARGET_DIR" ]; then cp -f "$TARGET_DIR"/*.conf "$work/config/targets.d/" 2>/dev/null || true; fi
   for f in ssh-config.dispatch known_hosts *.pub; do [ -f "$SSH_DIR/$f" ] && cp -f "$SSH_DIR/$f" "$work/ssh/" 2>/dev/null || true; done
   if [ "$include_keys" = "yes" ] || [ "$include_keys" = "y" ]; then
-    for f in id_ed25519 id_rsa; do [ -f "$SSH_DIR/$f" ] && cp -f "$SSH_DIR/$f" "$work/ssh/" 2>/dev/null || true; done
+    for f in id_drop_dispatch_ed25519 id_ed25519 id_rsa; do [ -f "$SSH_DIR/$f" ] && cp -f "$SSH_DIR/$f" "$work/ssh/" 2>/dev/null || true; done
   fi
   (cd "$work" && find . -type f | sort | while read -r f; do sha256sum "$f"; done > SHA256SUMS)
   out="$DOWNLOAD_DIR/ssh-drop-dispatcher-backup-$ts.zip"
@@ -311,10 +311,43 @@ import_private_runtime(){
   for f in ssh-config.dispatch known_hosts *.pub; do [ -f "$src/ssh/$f" ] && cp -f "$src/ssh/$f" "$SSH_DIR/" 2>/dev/null || true; done
   key_confirm=$(ask "Import private SSH key too? type IMPORT-PRIVATE-KEY or leave empty" "")
   if [ "$key_confirm" = "IMPORT-PRIVATE-KEY" ]; then
-    for f in id_ed25519 id_rsa; do [ -f "$src/ssh/$f" ] && cp -f "$src/ssh/$f" "$SSH_DIR/" 2>/dev/null || true; done
+    for f in id_drop_dispatch_ed25519 id_ed25519 id_rsa; do [ -f "$src/ssh/$f" ] && cp -f "$src/ssh/$f" "$SSH_DIR/" 2>/dev/null || true; done
   fi
   chmod 600 "$CONFIG_ENV" "$TARGET_DIR"/*.conf "$SSH_DIR"/* 2>/dev/null || true
   echo "private_runtime_import_done=yes"
+}
+
+
+export_private_runtime(){
+  src=/data/adb/pixel-drop-dispatch
+  [ -d "$src" ] || { echo "private runtime not found=$src"; return 1; }
+  ts=$(date +%Y%m%d-%H%M%S 2>/dev/null || echo now)
+  include_keys=$(ask "Include private SSH keys? yes/no" "no")
+  if [ "$include_keys" = "yes" ] || [ "$include_keys" = "y" ]; then
+    confirm=$(ask "Type INCLUDE-PRIVATE-KEYS to confirm" "")
+    [ "$confirm" = "INCLUDE-PRIVATE-KEYS" ] || { echo "private key export cancelled"; include_keys=no; }
+  fi
+  work="$STATE_DIR/tmp/private-export-$ts"
+  rm -rf "$work"; mkdir -p "$work/config/targets.d" "$work/ssh"
+  {
+    echo "backup_format=ssh-drop-dispatcher-v1"
+    echo "source_runtime=pixel-drop-dispatch"
+    echo "created_at=$ts"
+    echo "version=$VERSION"
+    echo "include_private_keys=$include_keys"
+  } > "$work/manifest.env"
+  [ -f "$src/config.env" ] && cp -f "$src/config.env" "$work/config.env" 2>/dev/null || true
+  [ -d "$src/config/targets.d" ] && cp -f "$src/config/targets.d"/*.conf "$work/config/targets.d/" 2>/dev/null || true
+  for f in ssh-config.dispatch known_hosts *.pub; do [ -f "$src/ssh/$f" ] && cp -f "$src/ssh/$f" "$work/ssh/" 2>/dev/null || true; done
+  if [ "$include_keys" = "yes" ] || [ "$include_keys" = "y" ]; then
+    for f in id_drop_dispatch_ed25519 id_ed25519 id_rsa; do [ -f "$src/ssh/$f" ] && cp -f "$src/ssh/$f" "$work/ssh/" 2>/dev/null || true; done
+  fi
+  (cd "$work" && find . -type f | sort | while read -r f; do sha256sum "$f"; done > SHA256SUMS)
+  out="$DOWNLOAD_DIR/ssh-drop-dispatcher-private-runtime-export-$ts.zip"
+  rm -f "$out"
+  if command -v zip >/dev/null 2>&1; then (cd "$work" && zip -qr "$out" .); else zip_with_python "$work" "$out"; fi
+  chmod 600 "$out" 2>/dev/null || true
+  echo "private_runtime_export_zip=$out"
 }
 
 reset_defaults(){
@@ -346,11 +379,12 @@ menu(){
     echo "7) Remove Termux command"
     echo "8) Backup/export config ZIP"
     echo "9) Restore/import config ZIP"
-    echo "10) Import existing private runtime"
-    echo "11) Reset to default config"
-    echo "12) Create xda/GitHub issue.txt"
-    echo "13) Runtime status"
-    echo "14) Doctor"
+    echo "10) Export existing private runtime ZIP"
+    echo "11) Import existing private runtime"
+    echo "12) Reset to default config"
+    echo "13) Create xda/GitHub issue.txt"
+    echo "14) Runtime status"
+    echo "15) Doctor"
     echo "0) Exit"
     echo
     choice=$(ask "Choose" "0")
@@ -365,11 +399,12 @@ menu(){
       7) remove_termux_command; pause ;;
       8) backup_export; pause ;;
       9) restore_import; pause ;;
-      10) import_private_runtime; pause ;;
-      11) reset_defaults; pause ;;
-      12) create_issue_txt; pause ;;
-      13) runtime_status; pause ;;
-      14) doctor; pause ;;
+      10) export_private_runtime; pause ;;
+      11) import_private_runtime; pause ;;
+      12) reset_defaults; pause ;;
+      13) create_issue_txt; pause ;;
+      14) runtime_status; pause ;;
+      15) doctor; pause ;;
       0) exit 0 ;;
       *) echo "Invalid choice"; pause ;;
     esac
@@ -381,6 +416,7 @@ case "${1:-}" in
   remove-termux-command) remove_termux_command ;;
   backup|export) backup_export ;;
   restore|import) restore_import ;;
+  export-private-runtime) export_private_runtime ;;
   import-private-runtime) import_private_runtime ;;
   reset-defaults) reset_defaults ;;
   issue|issue.txt) create_issue_txt ;;
