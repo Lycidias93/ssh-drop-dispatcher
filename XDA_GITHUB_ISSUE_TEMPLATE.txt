@@ -1,0 +1,15 @@
+# SSH Drop Dispatcher issue
+
+Please attach the generated issue file from:
+
+```text
+/storage/emulated/0/Download/ssh-drop-dispatcher-issue-YYYYMMDD-HHMMSS.txt
+```
+
+Create it with:
+
+```sh
+dispatch-config issue
+```
+
+Do not paste private SSH keys, access tokens or private host details manually. The generated file redacts common private fields.

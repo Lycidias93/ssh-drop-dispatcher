@@ -1,3 +1,38 @@
+<!-- SDD_V4110_RC1_WIZARD_WEBUI_START -->
+## v4.11.0-rc1 public vNext
+
+SSH Drop Dispatcher v4.11.0-rc1 is the public-safe vNext line maintained by Lycidias93.
+
+Primary setup command after flashing and rebooting:
+
+```sh
+dispatch-config
+```
+
+Fallback if the Termux command is not available yet:
+
+```sh
+su -c /data/adb/ssh-drop-dispatcher/bin/dispatch-config
+```
+
+Included in this RC:
+
+- `dispatch-config` interactive wizard
+- Termux command install/remove/repair support
+- config backup/export ZIP and restore/import ZIP
+- optional private SSH key export/import with explicit confirmation
+- import helper for an existing private runtime into the public runtime
+- reset to public default config
+- redacted `xda/GitHub issue.txt` support export
+- WebUI files for WebUI-capable managers plus Magisk action button fallback
+- Magisk online update metadata through `update-rc.json`
+
+Public/private boundary:
+
+- Public release contains no private targets, no private IPs, no private paths and no private SSH keys.
+- Private configs may be imported locally by the owner through the wizard, but are never bundled in the public ZIP.
+<!-- SDD_V4110_RC1_WIZARD_WEBUI_END -->
+
 # SSH Drop Dispatcher
 
 SSH Drop Dispatcher is an Android/Magisk file-drop dispatcher that routes files to configured SSH targets based on filename markers.
