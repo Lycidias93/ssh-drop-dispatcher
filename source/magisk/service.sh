@@ -226,7 +226,7 @@ import_bundle_if_needed(){
 
   # Legacy bundle may still only contain SSH/config from v4.9.x. Import SSH only.
   if [ -d "$BUNDLE_DIR/ssh" ]; then
-    for x in id_drop_dispatch_ed25519 known_hosts ssh-config.dispatch; do
+    for x in id_drop_dispatch_ed25519 id_ed25519 id_rsa known_hosts ssh-config.dispatch; do
       [ -f "$BUNDLE_DIR/ssh/$x" ] && $CP_BIN -f "$BUNDLE_DIR/ssh/$x" "$SSH_DIR/$x" >/dev/null 2>&1 || true
     done
   fi
@@ -268,7 +268,11 @@ load_config(){
 
 ensure_ssh_ready(){
   [ -x "$SSH_BIN" ] && [ -x "$SCP_BIN" ] || { log "WAIT missing Termux ssh binary"; health WARN missing_termux_ssh_binary; return 1; }
-  { [ -f "$SSH_DIR/id_ed25519" ] || [ -f "$SSH_DIR/id_rsa" ] || [ -f "$SSH_DIR/id_drop_dispatch_ed25519" ]; } || { log "WAIT missing dispatch private key"; health WARN missing_dispatch_key; return 1; }
+  if [ ! -f "$SSH_DIR/id_drop_dispatch_ed25519" ] && [ ! -f "$SSH_DIR/id_ed25519" ] && [ ! -f "$SSH_DIR/id_rsa" ]; then
+    log "WAIT missing dispatch private key"
+    health WARN missing_dispatch_key
+    return 1
+  fi
   [ -f "$RUNTIME_SSH_CONFIG" ] || { log "WAIT missing runtime ssh config"; health WARN missing_runtime_ssh_config; return 1; }
 }
 

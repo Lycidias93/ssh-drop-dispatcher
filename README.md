@@ -38,7 +38,7 @@ Public/private boundary:
 SSH Drop Dispatcher is an Android/Magisk file-drop dispatcher that routes files to configured SSH targets based on filename markers.
 
 Status:
-Public release candidate: 4.10.0-rc3
+Public release candidate: 4.11.0-rc2
 
 What it does:
 - Watches a local Android drop directory
@@ -106,6 +106,13 @@ Do not infer private runtime state from this public repository.
 - Duplicate processing protection
 - Manual and event-based scans
 - No bundled private target definitions
+
+
+## Factory reset and private-runtime migration
+
+The public package does not ship private targets, private paths or SSH keys.
+For an existing private Pixel Drop Dispatcher installation, use `dispatch-config` and choose `Export existing private runtime ZIP` before replacing the private module.
+The export can include public SSH material by default and private SSH keys only after an explicit typed confirmation.
 
 ## Interactive setup
 

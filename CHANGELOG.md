@@ -1,3 +1,10 @@
+## 4.11.0-rc2 - public RC2
+
+- Add non-destructive export of an existing private Pixel Drop Dispatcher runtime into an SSH Drop Dispatcher backup ZIP.
+- Include legacy private key name `id_drop_dispatch_ed25519` in backup/export and private-runtime migration flows.
+- Accept `id_drop_dispatch_ed25519`, `id_ed25519` or `id_rsa` as dispatcher private-key presence checks.
+- Keep public author metadata as `Lycidias93` and retain public/private guard.
+
 <!-- SDD_V4110_RC1_WIZARD_WEBUI_START -->
 ## 4.11.0-rc1 - public vNext RC
 

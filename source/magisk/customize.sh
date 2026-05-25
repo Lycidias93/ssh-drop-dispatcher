@@ -74,3 +74,5 @@ fi
 ui_print "- After reboot run: dispatch-config"
 ui_print "- Fallback: su -c $RUNTIME_CMD"
 ui_print "- Runtime status: su -c /data/adb/modules/ssh_drop_dispatcher/service.sh --runtime-status"
+
+ui_print "- Private runtime export: dispatch-config -> Export existing private runtime ZIP"
