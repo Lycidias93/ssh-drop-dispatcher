@@ -1,3 +1,9 @@
+## 4.11.0-rc3 - public RC3
+
+- Fix private runtime export with private SSH keys for non-interactive `su -c` usage.
+- Add explicit environment-gated export confirmation for `export-private-runtime`.
+- Keep public package free of bundled private targets, private paths and private keys.
+
 ## 4.11.0-rc2 - public RC2
 
 - Add non-destructive export of an existing private Pixel Drop Dispatcher runtime into an SSH Drop Dispatcher backup ZIP.

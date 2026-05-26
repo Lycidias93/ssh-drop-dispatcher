@@ -17,7 +17,7 @@ TERMUX_BIN=/data/data/com.termux/files/usr/bin
 TERMUX_CMD=$TERMUX_BIN/dispatch-config
 DEFAULT_SCAN_DIR=/storage/emulated/0/Download
 DEFAULT_REMOTE_DROP=/tmp/ssh-drop-dispatcher-drop
-VERSION=4.11.0-rc2
+VERSION=4.11.0-rc3
 
 mkdir -p "$CONFIG_DIR" "$TARGET_DIR" "$SSH_DIR" "$BACKUP_DIR" "$RUNTIME_BIN" "$DOWNLOAD_DIR" >/dev/null 2>&1 || true
 
@@ -322,9 +322,16 @@ export_private_runtime(){
   src=/data/adb/pixel-drop-dispatch
   [ -d "$src" ] || { echo "private runtime not found=$src"; return 1; }
   ts=$(date +%Y%m%d-%H%M%S 2>/dev/null || echo now)
-  include_keys=$(ask "Include private SSH keys? yes/no" "no")
-  if [ "$include_keys" = "yes" ] || [ "$include_keys" = "y" ]; then
-    confirm=$(ask "Type INCLUDE-PRIVATE-KEYS to confirm" "")
+  include_keys="${SDD_EXPORT_INCLUDE_PRIVATE_KEYS:-}"
+  if [ -z "$include_keys" ]; then
+    include_keys=$(ask "Include private SSH keys? yes/no" "no")
+  fi
+  case "$include_keys" in yes|y|Y|1|true|TRUE) include_keys=yes ;; *) include_keys=no ;; esac
+  if [ "$include_keys" = "yes" ]; then
+    confirm="${SDD_EXPORT_PRIVATE_KEYS_CONFIRM:-}"
+    if [ -z "$confirm" ]; then
+      confirm=$(ask "Type INCLUDE-PRIVATE-KEYS to confirm" "")
+    fi
     [ "$confirm" = "INCLUDE-PRIVATE-KEYS" ] || { echo "private key export cancelled"; include_keys=no; }
   fi
   work="$STATE_DIR/tmp/private-export-$ts"
@@ -339,8 +346,8 @@ export_private_runtime(){
   [ -f "$src/config.env" ] && cp -f "$src/config.env" "$work/config.env" 2>/dev/null || true
   [ -d "$src/config/targets.d" ] && cp -f "$src/config/targets.d"/*.conf "$work/config/targets.d/" 2>/dev/null || true
   for f in ssh-config.dispatch known_hosts *.pub; do [ -f "$src/ssh/$f" ] && cp -f "$src/ssh/$f" "$work/ssh/" 2>/dev/null || true; done
-  if [ "$include_keys" = "yes" ] || [ "$include_keys" = "y" ]; then
-    for f in id_drop_dispatch_ed25519 id_ed25519 id_rsa; do [ -f "$src/ssh/$f" ] && cp -f "$src/ssh/$f" "$work/ssh/" 2>/dev/null || true; done
+  if [ "$include_keys" = "yes" ]; then
+    for f in id_drop_dispatch_ed25519 id_ed25519 id_rsa; do [ -f "$src/ssh/$f" ] && cp -f "$src/ssh/$f" "$work/ssh/$f" 2>/dev/null || true; done
   fi
   (cd "$work" && find . -type f | sort | while read -r f; do sha256sum "$f"; done > SHA256SUMS)
   out="$DOWNLOAD_DIR/ssh-drop-dispatcher-private-runtime-export-$ts.zip"
