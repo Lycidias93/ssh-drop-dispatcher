@@ -26,3 +26,13 @@ dispatch-config export-private-runtime
 This creates a ZIP in the Android Download directory using the public SSH Drop Dispatcher backup format. Private SSH keys are excluded by default and require typing `INCLUDE-PRIVATE-KEYS`.
 
 Use this before replacing a private Pixel Drop Dispatcher runtime with the public SSH Drop Dispatcher module.
+
+## Non-interactive export with private keys
+
+The `export-private-runtime` command can be driven non-interactively for migration tests:
+
+```sh
+SDD_EXPORT_INCLUDE_PRIVATE_KEYS=yes SDD_EXPORT_PRIVATE_KEYS_CONFIRM=INCLUDE-PRIVATE-KEYS dispatch-config export-private-runtime
+```
+
+Only use this for local migration or local backups. Do not upload the resulting ZIP to public releases or issue reports.
