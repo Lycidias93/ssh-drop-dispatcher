@@ -1,3 +1,9 @@
+## 4.11.0-rc6 - 2026-05-28
+
+- Fixes the RC5 runtime abort where `load_target_registry()` could return a failing status when enabled target configs omit optional `verify=`.
+- Keeps registry routing and Sortify release-marker contract from RC5.
+- RC5 remains a prerelease only; use RC6 for fresh installs and reset/restore workflows.
+
 ## 4.11.0-rc5 - Registry routing and Sortify marker contract
 - Routes file names through the imported target registry instead of hard-coded sample targets.
 - Adds a Sortify release marker directory and writes completion markers after all selected targets finish.

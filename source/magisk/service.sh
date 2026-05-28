@@ -143,8 +143,11 @@ load_target_registry(){
     fi
     case "$shell" in sh|bash) ;; *) shell=bash ;; esac
     set_dynamic_var "SHELL_$target_name" "$shell"
-    [ -n "${verify:-}" ] && set_dynamic_var "VERIFY_$target_name" "$verify"
+    if [ -n "${verify:-}" ]; then
+      set_dynamic_var "VERIFY_$target_name" "$verify"
+    fi
   done
+  return 0
 }
 
 registry_summary(){
