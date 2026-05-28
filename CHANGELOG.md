@@ -1,3 +1,9 @@
+## 4.11.0-rc5 - Registry routing and Sortify marker contract
+- Routes file names through the imported target registry instead of hard-coded sample targets.
+- Adds a Sortify release marker directory and writes completion markers after all selected targets finish.
+- Keeps prompt-safe private-runtime export behavior from rc4.
+- Public defaults remain generic and contain no private targets, paths, IPs or keys.
+
 ## 4.11.0-rc4 - Prompt-safe private runtime export
 - Routes `dispatch-config` prompts to stderr so command substitution captures only answers.
 - Fixes confirmed private SSH key inclusion in private-runtime export ZIPs.

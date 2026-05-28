@@ -32,6 +32,7 @@ LAST_EVENT_FILE=$STATE_DIR/.last_event
 TMP_SCAN_LIST=$STATE_DIR/.scan.list
 TMP_PENDING_LIST=$STATE_DIR/.scan.pending
 PIDD_POLICY_VERSION=v4115
+SORTIFY_RELEASE_DIR=$STATE_DIR/integration/sortify-release
 
 SSH_BIN_DEFAULT=/data/data/com.termux/files/usr/bin/ssh
 BASH_BIN_DEFAULT=/data/data/com.termux/files/usr/bin/bash
@@ -57,7 +58,7 @@ KILL_BIN=/system/bin/kill
 TOYBOX_BIN=/system/bin/toybox
 TAIL_BIN=/system/bin/tail
 
-$MKDIR_BIN -p "$LOG_DIR" "$SSH_DIR" >/dev/null 2>&1
+$MKDIR_BIN -p "$LOG_DIR" "$SSH_DIR" "$SORTIFY_RELEASE_DIR" >/dev/null 2>&1
 $TOUCH_BIN "$LOG_FILE" "$DONE_FILE" "$FAIL_DB" "$QUAR_DB" "$INFLIGHT_DB" "$COMPLETE_DB" >/dev/null 2>&1
 
 log(){ printf "%s %s\n" "$( $DATE_BIN "+%F %T")" "$*" >> "$LOG_FILE"; }
@@ -114,7 +115,12 @@ set_dynamic_var(){
   eval "$n=$(sq "$v")"
 }
 
+append_active_target(){ case " $ACTIVE_TARGETS " in *" $1 "*) ;; *) ACTIVE_TARGETS="$ACTIVE_TARGETS $1";; esac; }
+
+target_known(){ case " $ACTIVE_TARGETS " in *" $1 "*) return 0;; *) return 1;; esac; }
+
 load_target_registry(){
+  ACTIVE_TARGETS=""
   [ -d "$TARGETS_DIR" ] || return 0
   for cf in "$TARGETS_DIR"/*.conf; do
     [ -f "$cf" ] || continue
@@ -122,12 +128,22 @@ load_target_registry(){
     enabled=1
     ssh_host=
     remote_drop=
+    platform=
+    shell=
+    verify=
     . "$cf"
     target_name=$(lower_name "$target_name")
     case "$target_name" in ""|*[!a-z0-9_]*) log "WARN target_registry invalid_name file=$cf"; continue;; esac
     [ "${enabled:-1}" = "1" ] || continue
+    append_active_target "$target_name"
     [ -n "${ssh_host:-}" ] && set_dynamic_var "HOST_$target_name" "$ssh_host"
     [ -n "${remote_drop:-}" ] && set_dynamic_var "REMOTE_DIR_$target_name" "$remote_drop"
+    if [ -z "${shell:-}" ]; then
+      case "${platform:-}" in openwrt|busybox|ash) shell=sh ;; *) shell=bash ;; esac
+    fi
+    case "$shell" in sh|bash) ;; *) shell=bash ;; esac
+    set_dynamic_var "SHELL_$target_name" "$shell"
+    [ -n "${verify:-}" ] && set_dynamic_var "VERIFY_$target_name" "$verify"
   done
 }
 
@@ -301,15 +317,60 @@ clear_inflight(){
   $MV_BIN -f "$tmp" "$INFLIGHT_DB" >/dev/null 2>&1 || true
 }
 
+file_size_bytes(){
+  $WC_BIN -c < "$1" 2>/dev/null | $TR_BIN -d " " 2>/dev/null
+}
+
+file_sha256(){
+  file="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" 2>/dev/null | while read -r h rest; do printf "%s" "$h"; done
+    return 0
+  fi
+  if [ -x /data/data/com.termux/files/usr/bin/sha256sum ]; then
+    /data/data/com.termux/files/usr/bin/sha256sum "$file" 2>/dev/null | while read -r h rest; do printf "%s" "$h"; done
+    return 0
+  fi
+  $CKSUM_BIN "$file" 2>/dev/null | while read -r a b rest; do printf "%s-%s" "$a" "$b"; done
+}
+
+release_sortify_marker(){
+  file="$1"; base="$2"; rec="$3"; targets="$4"; reason="$5"
+  [ -f "$file" ] || return 0
+  $MKDIR_BIN -p "$SORTIFY_RELEASE_DIR" >/dev/null 2>&1 || return 0
+  sum=$(file_sha256 "$file")
+  [ -n "$sum" ] || sum=$($CKSUM_BIN "$file" 2>/dev/null | while read -r a b rest; do printf "%s-%s" "$a" "$b"; done)
+  size=$(file_size_bytes "$file")
+  [ -n "$size" ] || size=0
+  tmp="$SORTIFY_RELEASE_DIR/.$sum.env.tmp.$$"
+  marker="$SORTIFY_RELEASE_DIR/$sum.env"
+  {
+    printf "released=yes\n"
+    printf "authority=dispatcher\n"
+    printf "filename=%s\n" "$(sq "$base")"
+    printf "sha256=%s\n" "$sum"
+    printf "size=%s\n" "$size"
+    printf "rec=%s\n" "$(sq "$rec")"
+    printf "targets=%s\n" "$(sq "$targets")"
+    printf "done_targets=%s\n" "$(sq "$targets")"
+    printf "pending_targets=''\n"
+    printf "reason=%s\n" "$(sq "$reason")"
+    printf "policy=%s\n" "$PIDD_POLICY_VERSION"
+    printf "updated_at=%s\n" "$(sq "$($DATE_BIN '+%F %T' 2>/dev/null || echo now)")"
+  } > "$tmp" 2>/dev/null || return 0
+  $CHMOD_BIN 600 "$tmp" >/dev/null 2>&1 || true
+  $MV_BIN -f "$tmp" "$marker" >/dev/null 2>&1 || true
+  log "RELEASE_MARKER file=$base marker=$marker reason=$reason policy=$PIDD_POLICY_VERSION"
+}
+
 local_sh_preflight(){
   file="$1"; base="$2"; targets="$3"
-  # target-aware v4.10.0 registry final
   needs_bash=0
   needs_sh=0
   for t in $targets; do
-    case "$t" in
-      alpha|beta|edge) needs_bash=1 ;;
-      router) needs_sh=1 ;;
+    case "$(target_shell "$t")" in
+      sh) needs_sh=1 ;;
+      bash|*) needs_bash=1 ;;
     esac
   done
   [ "$needs_bash" = "1" ] && [ "$needs_sh" = "1" ] && { log "FAIL local_preflight mixed_shell_targets file=$base"; return 1; }
@@ -339,12 +400,14 @@ append_target(){ case " $out " in *" $1 "*) ;; *) out="$out $1";; esac; }
 marker_targets_for(){
   l="$1"
   case "$l" in
-    target-alpha__*) printf " alpha"; return 0 ;;
-    target-beta__*) printf " beta"; return 0 ;;
-    target-edge__*) printf " edge"; return 0 ;;
-    target-router__*) printf " router"; return 0 ;;
-  esac
-  case "$l" in
+    target-*__*)
+      tok=${l#target-}
+      tok=${tok%%__*}
+      case "$tok" in ""|*[!a-z0-9_]*) return 1;; esac
+      target_known "$tok" || return 1
+      printf " %s" "$tok"
+      return 0
+      ;;
     targets-*__*)
       prefix=${l%%__*}
       tokens=${prefix#targets-}
@@ -354,10 +417,9 @@ marker_targets_for(){
       set -- $tokens
       IFS=$oldifs
       for tok in "$@"; do
-        case "$tok" in
-          alpha|beta|edge|router) append_target "$tok" ;;
-          *) return 1 ;;
-        esac
+        case "$tok" in ""|*[!a-z0-9_]*) return 1;; esac
+        target_known "$tok" || return 1
+        append_target "$tok"
       done
       [ -n "$out" ] || return 1
       printf "%s" "$out"
@@ -372,15 +434,16 @@ targets_for(){
   mt=$(marker_targets_for "$l" 2>/dev/null || true)
   [ -n "$mt" ] && { printf "%s" "$mt"; return 0; }
   out=""
-  has_token "$l" alpha && append_target alpha
-  has_token "$l" beta && append_target beta
-  has_token "$l" edge && append_target edge
-  has_token "$l" router && append_target router
+  for t in $ACTIVE_TARGETS; do
+    has_token "$l" "$t" && append_target "$t"
+  done
   printf "%s" "$out"
 }
 
-target_host(){ eval "printf '%s' \"\${HOST_$1}\""; }
-target_dir(){ eval "printf '%s' \"\${REMOTE_DIR_$1}\""; }
+target_host(){ eval "printf '%s' \"\${HOST_$1:-}\""; }
+target_dir(){ eval "printf '%s' \"\${REMOTE_DIR_$1:-}\""; }
+target_shell(){ eval "v=\"\${SHELL_$1:-bash}\""; printf '%s' "$v"; }
+target_verify(){ eval "v=\"\${VERIFY_$1:-}\""; printf '%s' "$v"; }
 
 remote_verify_basic(){
   host="$1"; dst="$2"; qdst=$(sq "$dst")
@@ -389,15 +452,20 @@ remote_verify_basic(){
 
 remote_verify_script(){
   target="$1"; host="$2"; dst="$3"; qdst=$(sq "$dst")
-  case "$target" in
-    alpha) verifier="/usr/local/bin/verify-script.sh" ;;
-    beta) verifier="/usr/local/bin/verify-script.sh" ;;
-    edge) verifier="/usr/local/bin/verify-script.sh" ;;
-    router) verifier="/usr/local/bin/verify-script.sh" ;;
-    *) return 1 ;;
+  verifier=$(target_verify "$target")
+  if [ -n "$verifier" ]; then
+    qver=$(sq "$verifier")
+    "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=12 "$host" "$qver $qdst" >/dev/null 2>&1
+    return $?
+  fi
+  case "$(target_shell "$target")" in
+    sh)
+      "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=12 "$host" "sh -n $qdst" >/dev/null 2>&1
+      ;;
+    bash|*)
+      "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=12 "$host" "if command -v bash >/dev/null 2>&1; then bash -n $qdst; else sh -n $qdst; fi" >/dev/null 2>&1
+      ;;
   esac
-  qver=$(sq "$verifier")
-  "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=12 "$host" "sh -c '$qver $qdst'" >/dev/null 2>&1
 }
 
 fully_done_or_blocked(){
@@ -432,7 +500,10 @@ process_file(){
   if fully_done_or_blocked "$rec" "$targets"; then
     all_done=1
     for t in $targets; do already_done "$rec" "$t" || all_done=0; done
-    [ "$all_done" = "1" ] && record_complete "$rec"
+    if [ "$all_done" = "1" ]; then
+      record_complete "$rec"
+      release_sortify_marker "$file" "$base" "$rec" "$targets" "all_targets_done"
+    fi
     return 0
   fi
 
@@ -481,7 +552,11 @@ process_file(){
 
   all_done=1
   for t in $targets; do already_done "$rec" "$t" || all_done=0; done
-  [ "$all_done" = "1" ] && { record_complete "$rec"; log "KEEP local file=$base"; }
+  if [ "$all_done" = "1" ]; then
+    record_complete "$rec"
+    release_sortify_marker "$file" "$base" "$rec" "$targets" "all_targets_done"
+    log "KEEP local file=$base"
+  fi
 }
 
 queue_candidate(){
@@ -599,6 +674,8 @@ runtime_status(){
   echo "== health =="
   health OK runtime_status
   $CAT_BIN "$HEALTH_FILE" 2>/dev/null || true
+  echo "== sortify marker =="
+  [ -d "$SORTIFY_RELEASE_DIR" ] && echo "sortify_release_dir=present path=$SORTIFY_RELEASE_DIR" || echo "sortify_release_dir=missing path=$SORTIFY_RELEASE_DIR"
   echo "== pids =="
   for f in "$MAIN_PID_FILE" "$WATCHER_PID_FILE" "$WATCHDOG_PID_FILE"; do
     p=$(read_pid_file "$f")

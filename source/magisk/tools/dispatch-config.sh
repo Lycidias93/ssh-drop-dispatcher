@@ -17,7 +17,7 @@ TERMUX_BIN=/data/data/com.termux/files/usr/bin
 TERMUX_CMD=$TERMUX_BIN/dispatch-config
 DEFAULT_SCAN_DIR=/storage/emulated/0/Download
 DEFAULT_REMOTE_DROP=/tmp/ssh-drop-dispatcher-drop
-VERSION=4.11.0-rc4
+VERSION=4.11.0-rc5
 mkdir -p "$CONFIG_DIR" "$TARGET_DIR" "$SSH_DIR" "$BACKUP_DIR" "$RUNTIME_BIN" "$DOWNLOAD_DIR" >/dev/null 2>&1 || true
 
 ask(){
@@ -164,11 +164,17 @@ test_target(){
   ensure_default_config
   target=$(ask "Target name to test" "example")
   case "$target" in ""|*[!abcdefghijklmnopqrstuvwxyz0123456789_-]*) echo "invalid target"; return 2;; esac
-  alias="sdd_$target"
+  host="$target"
+  cf="$TARGET_DIR/$target.conf"
+  if [ -f "$cf" ]; then
+    ssh_host=
+    . "$cf"
+    [ -n "${ssh_host:-}" ] && host="$ssh_host"
+  fi
   SSH_BIN=${SSH_BIN:-/data/data/com.termux/files/usr/bin/ssh}
   if [ ! -x "$SSH_BIN" ]; then echo "missing ssh=$SSH_BIN"; return 3; fi
   if [ ! -f "$SSH_CFG" ]; then echo "missing ssh config=$SSH_CFG"; return 4; fi
-  "$SSH_BIN" -F "$SSH_CFG" "$alias" "printf 'SSH_DROP_DISPATCHER_TARGET_OK target=%s\\n' '$target'"
+  "$SSH_BIN" -F "$SSH_CFG" "$host" "printf 'SSH_DROP_DISPATCHER_TARGET_OK target=%s\\n' '$target'"
 }
 
 redact(){
@@ -215,7 +221,7 @@ zip_with_python(){
   py=${PYTHON_BIN:-/data/data/com.termux/files/usr/bin/python3}
   [ -x "$py" ] || py=/data/data/com.termux/files/usr/bin/python
   [ -x "$py" ] || return 1
-  "$py" -c 'import os,sys,zipfile; src,out=sys.argv[1],sys.argv[2]; z=zipfile.ZipFile(out,"w",zipfile.ZIP_DEFLATED); root=os.path.abspath(src); 
+  "$py" -c 'import os,sys,zipfile; src,out=sys.argv[1],sys.argv[2]; z=zipfile.ZipFile(out,"w",zipfile.ZIP_DEFLATED); root=os.path.abspath(src);
 for base,dirs,files in os.walk(root):
   dirs.sort(); files.sort()
   for f in files:
