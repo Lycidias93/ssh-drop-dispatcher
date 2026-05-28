@@ -17,13 +17,12 @@ TERMUX_BIN=/data/data/com.termux/files/usr/bin
 TERMUX_CMD=$TERMUX_BIN/dispatch-config
 DEFAULT_SCAN_DIR=/storage/emulated/0/Download
 DEFAULT_REMOTE_DROP=/tmp/ssh-drop-dispatcher-drop
-VERSION=4.11.0-rc3
-
+VERSION=4.11.0-rc4
 mkdir -p "$CONFIG_DIR" "$TARGET_DIR" "$SSH_DIR" "$BACKUP_DIR" "$RUNTIME_BIN" "$DOWNLOAD_DIR" >/dev/null 2>&1 || true
 
 ask(){
   prompt="$1"; default="${2:-}"
-  if [ -n "$default" ]; then printf "%s [%s]: " "$prompt" "$default"; else printf "%s: " "$prompt"; fi
+  if [ -n "$default" ]; then printf "%s [%s]: " "$prompt" "$default" >&2; else printf "%s: " "$prompt" >&2; fi
   IFS= read -r value || value=""
   [ -n "$value" ] && printf "%s" "$value" || printf "%s" "$default"
 }

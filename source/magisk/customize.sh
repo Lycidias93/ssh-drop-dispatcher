@@ -10,9 +10,10 @@ TERMUX_CMD=$TERMUX_BIN/dispatch-config
 RUNTIME_BIN=$STATE_DIR/bin
 RUNTIME_CMD=$RUNTIME_BIN/dispatch-config
 
-ui_print "SSH Drop Dispatcher 4.11.0-rc3"
+ui_print "SSH Drop Dispatcher 4.11.0-rc4"
 ui_print "Runtime SoT: $STATE_DIR"
-ui_print "Author: Lycidias93"
+ui_print "Author: Lycidias93
+Prompt-safe private runtime export: rc4"
 ui_print "Public defaults only: no bundled private targets or keys"
 ui_print "Command: dispatch-config"
 
@@ -77,4 +78,4 @@ ui_print "- Runtime status: su -c /data/adb/modules/ssh_drop_dispatcher/service.
 
 ui_print "- Private runtime export: dispatch-config -> Export existing private runtime ZIP"
 
-ui_print "- Private runtime export fix: rc3"
+ui_print "- Private runtime export prompt fix: rc4"
