@@ -36,3 +36,6 @@ SDD_EXPORT_INCLUDE_PRIVATE_KEYS=yes SDD_EXPORT_PRIVATE_KEYS_CONFIRM=INCLUDE-PRIV
 ```
 
 Only use this for local migration or local backups. Do not upload the resulting ZIP to public releases or issue reports.
+
+## Sortify release marker contract
+The dispatcher creates `integration/sortify-release` and writes per-file completion markers after all selected targets are done.

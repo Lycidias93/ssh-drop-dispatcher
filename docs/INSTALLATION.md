@@ -39,3 +39,6 @@ Stable releases use `update.json`.
 
 Do not disable or remove the private dispatcher until a public-format backup ZIP has been created and verified.
 Use `dispatch-config export-private-runtime` to create the ZIP, then import it into the public runtime only when you are ready to switch over.
+
+## Registry routing
+Runtime target files in `config/targets.d` are used for filename routing and SSH host resolution.
