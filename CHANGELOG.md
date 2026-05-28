@@ -1,10 +1,25 @@
-## 4.11.0-rc3 - public RC3
+## 4.11.0-rc4 - Prompt-safe private runtime export
+- Routes `dispatch-config` prompts to stderr so command substitution captures only answers.
+- Fixes confirmed private SSH key inclusion in private-runtime export ZIPs.
+- Keeps public defaults free of private targets, paths, keys and legacy author metadata.
+
+## 4.11.0-rc4
+- Fixed dispatch-config interactive prompts so command substitutions capture only answers, not prompt text.
+- Fixed private-runtime ZIP export with confirmed private SSH key inclusion.
+- Public metadata remains Lycidias93-only; no bundled private targets or keys.
+
+## 4.11.0-rc4 - ask-prompt private export fix
+- Fix `dispatch-config` prompts so command substitution captures only the answer, not the prompt text.
+- Restores confirmed private-key inclusion for `export-private-runtime` and backup/export flows.
+- Keeps public defaults only; no private targets, IPs, paths, keys, or Lycidias93 metadata are bundled.
+
+## 4.11.0-rc4 - public RC3
 
 - Fix private runtime export with private SSH keys for non-interactive `su -c` usage.
 - Add explicit environment-gated export confirmation for `export-private-runtime`.
 - Keep public package free of bundled private targets, private paths and private keys.
 
-## 4.11.0-rc2 - public RC2
+## 4.11.0-rc4 - public RC2
 
 - Add non-destructive export of an existing private Pixel Drop Dispatcher runtime into an SSH Drop Dispatcher backup ZIP.
 - Include legacy private key name `id_drop_dispatch_ed25519` in backup/export and private-runtime migration flows.
@@ -12,7 +27,7 @@
 - Keep public author metadata as `Lycidias93` and retain public/private guard.
 
 <!-- SDD_V4110_RC1_WIZARD_WEBUI_START -->
-## 4.11.0-rc1 - public vNext RC
+## 4.11.0-rc4 - public vNext RC
 
 - Switches public vNext ownership metadata to `Lycidias93`.
 - Adds `dispatch-config` interactive wizard as the primary setup entrypoint.

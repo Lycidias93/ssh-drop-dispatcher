@@ -1,7 +1,7 @@
 <!-- SDD_V4110_RC1_WIZARD_WEBUI_START -->
-## v4.11.0-rc1 public vNext
+## v4.11.0-rc4 public vNext
 
-SSH Drop Dispatcher v4.11.0-rc1 is the public-safe vNext line maintained by Lycidias93.
+SSH Drop Dispatcher v4.11.0-rc4 is the public-safe vNext line maintained by Lycidias93.
 
 Primary setup command after flashing and rebooting:
 
@@ -38,7 +38,7 @@ Public/private boundary:
 SSH Drop Dispatcher is an Android/Magisk file-drop dispatcher that routes files to configured SSH targets based on filename markers.
 
 Status:
-Public release candidate: 4.11.0-rc3
+Public release candidate: 4.11.0-rc4
 
 What it does:
 - Watches a local Android drop directory
@@ -147,3 +147,6 @@ SDD_EXPORT_INCLUDE_PRIVATE_KEYS=yes SDD_EXPORT_PRIVATE_KEYS_CONFIRM=INCLUDE-PRIV
 ```
 
 The resulting ZIP must be treated as sensitive when private keys are included.
+
+## v4.11.0-rc4
+- Fixes prompt-safe private-runtime export so confirmed private SSH keys are included in export ZIPs.

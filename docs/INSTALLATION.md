@@ -10,7 +10,7 @@
 
 ## Install
 
-1. Download `ssh-drop-dispatcher-magisk-v4.11.0-rc1.zip` from the GitHub release.
+1. Download `ssh-drop-dispatcher-magisk-v4.11.0-rc4.zip` from the GitHub release.
 2. Flash it in Magisk.
 3. Reboot Android.
 4. Open Termux and run:
