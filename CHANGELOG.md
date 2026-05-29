@@ -1,3 +1,9 @@
+## 4.11.0-rc7 - 2026-05-29
+
+- Polishes the Magisk installer banner so flash logs, `module.prop`, and update metadata consistently show `4.11.0-rc7`.
+- Carries forward the RC6 `load_target_registry()` return-code fix and RC5 registry routing + Sortify marker contract.
+- No runtime migration, private target bundling, DNS, HA, VIP, or route changes.
+
 ## 4.11.0-rc6 - 2026-05-28
 
 - Fixes the RC5 runtime abort where `load_target_registry()` could return a failing status when enabled target configs omit optional `verify=`.
