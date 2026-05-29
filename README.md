@@ -151,7 +151,7 @@ The resulting ZIP must be treated as sensitive when private keys are included.
 ## v4.11.0-rc4
 - Fixes prompt-safe private-runtime export so confirmed private SSH keys are included in export ZIPs.
 
-## 4.11.0-rc6 - Registry routing and Sortify marker contract
+## 4.11.0-rc7 - Registry routing and Sortify marker contract
 - Routes file names through the imported target registry instead of hard-coded sample targets.
 - Adds a Sortify release marker directory and writes completion markers after all selected targets finish.
 - Keeps prompt-safe private-runtime export behavior from rc4.
