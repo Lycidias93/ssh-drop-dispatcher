@@ -1,7 +1,7 @@
-<!-- SDD_V4110_RC1_WIZARD_WEBUI_START -->
-## v4.11.0-rc4 public vNext
+<!-- SDD_V4110_FINAL_PUBLIC_RELEASE_20260531_START -->
+## v4.11.0 final public release
 
-SSH Drop Dispatcher v4.11.0-rc4 is the public-safe vNext line maintained by Lycidias93.
+SSH Drop Dispatcher v4.11.0 is the public final release promoted from the fully verified rc7 line.
 
 Primary setup command after flashing and rebooting:
 
@@ -15,7 +15,44 @@ Fallback if the Termux command is not available yet:
 su -c /data/adb/ssh-drop-dispatcher/bin/dispatch-config
 ```
 
-Included in this RC:
+Included in this release:
+
+- `dispatch-config` interactive wizard
+- Termux command install/remove/repair support
+- config backup/export ZIP and restore/import ZIP
+- optional private SSH key export/import with explicit confirmation
+- import helper for an existing private runtime into the public runtime
+- registry-based filename routing
+- Sortify release marker contract with `policy=v4115`
+- reset to public default config
+- redacted support export
+- WebUI files for WebUI-capable managers plus Magisk action button fallback
+- Magisk online update metadata through `update.json`
+
+Public/private boundary:
+
+- Public release contains no private targets, no private IPs, no private paths and no private SSH keys.
+- Private configs may be imported locally by the owner through the wizard, but are never bundled in the public ZIP.
+<!-- SDD_V4110_FINAL_PUBLIC_RELEASE_20260531_END -->
+
+<!-- SDD_V4110_RC1_WIZARD_WEBUI_START -->
+## HISTORICAL - v4.11.0 public RC notes
+
+SSH Drop Dispatcher v4.11.0 RC notes are retained for history.
+
+Primary setup command after flashing and rebooting:
+
+```sh
+dispatch-config
+```
+
+Fallback if the Termux command is not available yet:
+
+```sh
+su -c /data/adb/ssh-drop-dispatcher/bin/dispatch-config
+```
+
+Included in this RC line:
 
 - `dispatch-config` interactive wizard
 - Termux command install/remove/repair support
@@ -25,7 +62,7 @@ Included in this RC:
 - reset to public default config
 - redacted `xda/GitHub issue.txt` support export
 - WebUI files for WebUI-capable managers plus Magisk action button fallback
-- Magisk online update metadata through `update-rc.json`
+- Magisk online RC update metadata through `update-rc.json`
 
 Public/private boundary:
 
@@ -38,7 +75,7 @@ Public/private boundary:
 SSH Drop Dispatcher is an Android/Magisk file-drop dispatcher that routes files to configured SSH targets based on filename markers.
 
 Status:
-Public release candidate: 4.11.0-rc4
+Public release: 4.11.0
 
 What it does:
 - Watches a local Android drop directory
@@ -60,12 +97,12 @@ Requirements:
 - SSH access to your own target hosts
 
 Configuration:
-This public RC does not include private target definitions.
+This public release does not include private target definitions.
 Add your own SSH targets before use.
 Keep private hostnames, IP addresses and SSH keys outside public releases.
 
 Online update channel:
-https://raw.githubusercontent.com/Lycidias93/ssh-drop-dispatcher/main/update-rc.json
+https://raw.githubusercontent.com/Lycidias93/ssh-drop-dispatcher/main/update.json
 
 Privacy:
 The public package must not include personal hostnames, private IPs, private paths, SSH keys, or device inventory.
@@ -89,7 +126,7 @@ Do not infer private runtime state from this public repository.
 - XDA draft: XDA_PUBLIC_RC_DRAFT.md
 ## Quick install
 
-1. Download ssh-drop-dispatcher-magisk-v4.10.0-rc3.zip from the release.
+1. Download ssh-drop-dispatcher-magisk-v4.11.0.zip from the release.
 2. Install it through Magisk.
 3. Reboot Android.
 4. Configure your own target files under /data/adb/ssh-drop-dispatcher/config/targets.d.

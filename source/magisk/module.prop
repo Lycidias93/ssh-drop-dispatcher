@@ -1,7 +1,7 @@
 id=ssh_drop_dispatcher
 name=SSH Drop Dispatcher
-version=4.11.0-rc7
-versionCode=4110007
+version=4.11.0
+versionCode=4110010
 author=Lycidias93
-description=Android/Magisk SSH file-drop dispatcher with registry routing, Sortify marker contract, load-target-registry fix, installer banner polish, backup/restore, WebUI and prompt-safe private-runtime export
-updateJson=https://raw.githubusercontent.com/Lycidias93/ssh-drop-dispatcher/main/update-rc.json
+description=Android/Magisk SSH file-drop dispatcher with registry routing, Sortify marker contract, backup/restore, WebUI and private-runtime migration support
+updateJson=https://raw.githubusercontent.com/Lycidias93/ssh-drop-dispatcher/main/update.json
