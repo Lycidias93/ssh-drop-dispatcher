@@ -1,3 +1,10 @@
+## 4.11.0 - 2026-05-31
+
+- Promotes the fully verified `4.11.0-rc7` line to the public final release.
+- Keeps registry-based target routing, Sortify release markers with `policy=v4115`, prompt-safe private-runtime migration/export, backup/restore, WebUI and interactive setup support.
+- Final update metadata is published through `update.json`; RC metadata remains separate in `update-rc.json`.
+- Public defaults remain generic and contain no private targets, private IPs, private paths, host inventory or SSH keys.
+
 ## 4.11.0-rc7 - 2026-05-29
 
 - Polishes the Magisk installer banner so flash logs, `module.prop`, and update metadata consistently show `4.11.0-rc7`.
