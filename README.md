@@ -1,3 +1,14 @@
+<!-- SDD_SORTIFY_CROSS_REPO_LINK_20260601_START -->
+## Companion: Sortify Dispatch
+
+SSH Drop Dispatcher pairs with [Sortify Dispatch](https://github.com/Lycidias93/Sortify-Dispatch), the optional local sorter/protection module for Android downloads.
+
+- SSH Drop Dispatcher routes `target-*__*` and `targets-*__*` artifacts to SSH targets.
+- Sortify Dispatch keeps those artifacts in `/sdcard/Download` until this dispatcher writes a valid `policy=v4115` release marker.
+- Pixel-local, Termux and repo helper artifacts are intentionally outside the dispatcher release marker contract.
+
+<!-- SDD_SORTIFY_CROSS_REPO_LINK_20260601_END -->
+
 <!-- SDD_V4110_FINAL_PUBLIC_RELEASE_20260531_START -->
 ## v4.11.0 final public release
 

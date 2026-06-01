@@ -1,3 +1,11 @@
+<!-- SDD_SORTIFY_CROSS_REPO_LINK_CHANGELOG_20260601_START -->
+## 2026-06-01 - README cross-link to Sortify Dispatch
+
+- Added a top-of-file README link from SSH Drop Dispatcher to Sortify Dispatch.
+- Clarified that Sortify protects local download artifacts while this dispatcher owns target delivery and release markers.
+
+<!-- SDD_SORTIFY_CROSS_REPO_LINK_CHANGELOG_20260601_END -->
+
 ## 4.11.0 - 2026-05-31
 
 - Promotes the fully verified `4.11.0-rc7` line to the public final release.
