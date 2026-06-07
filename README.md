@@ -1,3 +1,23 @@
+<!-- SDD_V4120_WEBUI_CONTROL_START -->
+## SSH Drop Dispatcher 4.12.0-webui-control-rc1 - WebUI control candidate
+
+This vNext candidate adds a small public control surface for day-to-day operation:
+
+- Enable/disable dispatcher from WebUI using `DROP_DISPATCH_ENABLED=0|1`.
+- Trigger `Dispatch now` without waiting for inotify/fallback scan.
+- Show runtime status, target matrix, Sortify marker state and bounded log tail.
+- Run doctor, create redacted issue bundle and requeue a selected file.
+- Keep the stable Sortify marker contract unchanged: `policy=v4115`, `authority=dispatcher`, `released=yes`, matching SHA/size and empty `pending_targets`.
+
+Scope guard:
+
+- No DNS, HA, VIP or route changes.
+- No host drop-path changes.
+- No Sortify Dispatch contract change.
+- No automatic private key export.
+
+<!-- SDD_V4120_WEBUI_CONTROL_END -->
+
 <!-- SDD_SORTIFY_CROSS_REPO_LINK_20260601_START -->
 ## Companion: Sortify Dispatch
 

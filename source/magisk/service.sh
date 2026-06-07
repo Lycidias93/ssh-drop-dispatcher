@@ -193,6 +193,7 @@ copy_module_runtime_defaults(){
 create_default_config_if_missing(){
   [ -f "$CONFIG_FILE" ] && return 0
   {
+    echo "DROP_DISPATCH_ENABLED=1"
     echo "DROP_DISPATCH_SCAN_DIR=/storage/emulated/0/Download"
     echo "DROP_DISPATCH_SETTLE_SECONDS=2"
     echo "DROP_DISPATCH_FALLBACK_RESCAN_SECONDS=1800"
@@ -264,6 +265,7 @@ import_bundle_if_needed(){
 load_config(){
   [ -f "$CONFIG_FILE" ] || return 1
   . "$CONFIG_FILE"
+  DROP_DISPATCH_ENABLED=${DROP_DISPATCH_ENABLED:-1}
   DROP_DISPATCH_SCAN_DIR=${DROP_DISPATCH_SCAN_DIR:-${SCAN_DIR:-/storage/emulated/0/Download}}
   DROP_DISPATCH_SETTLE_SECONDS=${DROP_DISPATCH_SETTLE_SECONDS:-2}
   DROP_DISPATCH_FALLBACK_RESCAN_SECONDS=${DROP_DISPATCH_FALLBACK_RESCAN_SECONDS:-1800}
@@ -585,6 +587,7 @@ schedule_followup(){
 
 scan_once(){
   reason="$1"
+  dispatcher_enabled || { log "SKIP disabled reason=$reason"; health WARN disabled; return 0; }
   if ! $MKDIR_BIN "$SCAN_LOCKDIR" >/dev/null 2>&1; then
     log "SKIP scan_locked reason=$reason"
     echo "1" > "$EVENT_PENDING_FILE"
@@ -664,6 +667,100 @@ status_file(){
   else
     $GREP_BIN -F "$base" "$LOG_FILE" 2>/dev/null || true
   fi
+}
+
+
+dispatcher_enabled(){
+  case "${DROP_DISPATCH_ENABLED:-1}" in 0|no|NO|false|FALSE|off|OFF) return 1 ;; *) return 0 ;; esac
+}
+
+config_set_key(){
+  key="$1"; val="$2"
+  case "$key" in ""|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_]*) return 2 ;; esac
+  $MKDIR_BIN -p "$CONFIG_DIR" >/dev/null 2>&1 || true
+  tmp="$CONFIG_FILE.tmp.$$"
+  if [ -f "$CONFIG_FILE" ]; then
+    $GREP_BIN -v "^$key=" "$CONFIG_FILE" > "$tmp" 2>/dev/null || true
+  else
+    : > "$tmp"
+  fi
+  printf "%s=%s\n" "$key" "$val" >> "$tmp"
+  $MV_BIN -f "$tmp" "$CONFIG_FILE" >/dev/null 2>&1 || return 1
+  $CHMOD_BIN 600 "$CONFIG_FILE" >/dev/null 2>&1 || true
+}
+
+set_dispatch_enabled(){
+  value="$1"
+  case "$value" in 1|true|TRUE|yes|YES|on|ON) normalized=1 ;; 0|false|FALSE|no|NO|off|OFF) normalized=0 ;; *) echo "invalid_enabled_value=$value"; return 2 ;; esac
+  config_set_key DROP_DISPATCH_ENABLED "$normalized" || return $?
+  DROP_DISPATCH_ENABLED="$normalized"
+  if [ "$normalized" = "0" ]; then
+    stop_all
+    log "CONTROL dispatcher disabled"
+    health WARN disabled
+    echo "dispatcher_enabled=0"
+    echo "runtime_action=stopped"
+    return 0
+  fi
+  log "CONTROL dispatcher enabled"
+  echo "dispatcher_enabled=1"
+  main_pid=$(read_pid_file "$MAIN_PID_FILE")
+  if pid_alive "$main_pid"; then
+    echo "service_start_requested=no"
+  else
+    "$MODDIR/service.sh" >/dev/null 2>&1 &
+    echo "service_start_requested=yes"
+  fi
+  schedule_followup || true
+}
+
+webui_log_tail(){
+  n="${1:-160}"
+  case "$n" in ""|*[!0-9]*) n=160 ;; esac
+  [ "$n" -lt 20 ] 2>/dev/null && n=20
+  [ "$n" -gt 500 ] 2>/dev/null && n=500
+  echo "== dispatch log tail =="
+  echo "lines=$n"
+  if [ -f "$LOG_FILE" ]; then
+    if [ -x "$TAIL_BIN" ]; then "$TAIL_BIN" -n "$n" "$LOG_FILE"; else $CAT_BIN "$LOG_FILE"; fi
+  else
+    echo "log_missing=$LOG_FILE"
+  fi
+}
+
+webui_status(){
+  echo "== webui control =="
+  echo "version=$($GREP_BIN -E '^version=' "$MODDIR/module.prop" 2>/dev/null | $SED_BIN 's/^version=//' | $SED_BIN -n '1p')"
+  echo "versionCode=$($GREP_BIN -E '^versionCode=' "$MODDIR/module.prop" 2>/dev/null | $SED_BIN 's/^versionCode=//' | $SED_BIN -n '1p')"
+  echo "dispatcher_enabled=${DROP_DISPATCH_ENABLED:-1}"
+  dispatcher_enabled && echo "dispatcher_state=enabled" || echo "dispatcher_state=disabled"
+  echo "scan_dir=${DROP_DISPATCH_SCAN_DIR:-}"
+  echo "state_dir=$STATE_DIR"
+  echo "sortify_release_dir=$SORTIFY_RELEASE_DIR"
+  echo "policy=$PIDD_POLICY_VERSION"
+  echo
+  registry_summary
+  echo
+  echo "== health =="
+  if dispatcher_enabled; then health OK webui_status; else health WARN disabled; fi
+  $CAT_BIN "$HEALTH_FILE" 2>/dev/null || true
+  echo
+  echo "== tools =="
+  for x in dispatch-config.sh pidd-config.sh pidd-doctor.sh pidd-health.sh pidd-migrate-config.sh; do
+    [ -x "$TOOLS_DIR/$x" ] && echo "$x=ok" || echo "$x=missing"
+  done
+  echo
+  echo "== sortify marker =="
+  [ -d "$SORTIFY_RELEASE_DIR" ] && echo "sortify_release_dir=present path=$SORTIFY_RELEASE_DIR" || echo "sortify_release_dir=missing path=$SORTIFY_RELEASE_DIR"
+  latest=$($FIND_BIN "$SORTIFY_RELEASE_DIR" -maxdepth 1 -type f -name '*.env' 2>/dev/null | sort | tail -n 1)
+  [ -n "$latest" ] && echo "latest_marker=$latest" || echo "latest_marker=none"
+  echo
+  echo "== pids =="
+  for f in "$MAIN_PID_FILE" "$WATCHER_PID_FILE" "$WATCHDOG_PID_FILE"; do
+    p=$(read_pid_file "$f")
+    echo "$f=${p:-missing}"
+    [ -n "$p" ] && pid_alive "$p" && echo "alive=yes" || true
+  done
 }
 
 runtime_status(){
@@ -769,6 +866,21 @@ watchdog_loop(){
 }
 
 case "${1:-}" in
+  --enable)
+    wait_boot; import_bundle_if_needed; load_config || create_default_config_if_missing || exit 1; set_dispatch_enabled 1
+    ;;
+  --disable)
+    wait_boot; import_bundle_if_needed; load_config || create_default_config_if_missing || exit 1; set_dispatch_enabled 0
+    ;;
+  --dispatch-now|--scan-now)
+    wait_boot; import_bundle_if_needed; load_config || exit 1; dispatcher_enabled || { echo "dispatcher_enabled=0"; health WARN disabled; exit 2; }; ensure_ssh_ready || exit 1; scan_once webui_dispatch_now
+    ;;
+  --webui-status)
+    wait_boot; import_bundle_if_needed; load_config || exit 1; webui_status
+    ;;
+  --webui-log-tail)
+    wait_boot; import_bundle_if_needed; load_config || exit 1; webui_log_tail "${2:-160}"
+    ;;
   --scan-once)
     reason="${2:-manual_scan}"
     wait_boot; import_bundle_if_needed; load_config || exit 1; ensure_ssh_ready || exit 1; scan_once "$reason"
@@ -829,9 +941,12 @@ case "${1:-}" in
     stop_all
     ;;
   *)
-    wait_boot; import_bundle_if_needed; load_config || exit 0; stop_all; start_inotify; echo $$ > "$MAIN_PID_FILE"; watchdog_loop & echo $! > "$WATCHDOG_PID_FILE"
+    wait_boot; import_bundle_if_needed; load_config || exit 0
+    if ! dispatcher_enabled; then stop_all; log "DISABLED service_start skipped"; health WARN disabled; exit 0; fi
+    stop_all; start_inotify; echo $$ > "$MAIN_PID_FILE"; watchdog_loop & echo $! > "$WATCHDOG_PID_FILE"
     while true; do
       import_bundle_if_needed; load_config || { $SLEEP_BIN 30; continue; }
+      if ! dispatcher_enabled; then stop_all; log "DISABLED runtime loop stopped"; health WARN disabled; exit 0; fi
       ensure_ssh_ready || { $SLEEP_BIN 30; continue; }
       scan_once fallback_rescan
       $SLEEP_BIN "$DROP_DISPATCH_FALLBACK_RESCAN_SECONDS"
