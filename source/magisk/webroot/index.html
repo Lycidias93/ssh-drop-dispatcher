@@ -4,32 +4,102 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SSH Drop Dispatcher</title>
-  <link rel="stylesheet" href="style.css">
+  <style>
+    :root { color-scheme: light dark; --gap: 12px; }
+    body { font-family: system-ui, sans-serif; margin: 18px; line-height: 1.35; }
+    h1 { font-size: 1.45rem; margin: 0 0 6px; }
+    h2 { font-size: 1.05rem; margin: 20px 0 8px; }
+    .grid { display: grid; gap: var(--gap); grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+    button, input { font: inherit; padding: 10px; border-radius: 10px; border: 1px solid #8886; }
+    button { cursor: pointer; }
+    input { width: 100%; box-sizing: border-box; }
+    pre { white-space: pre-wrap; word-break: break-word; padding: 12px; border-radius: 12px; border: 1px solid #8884; max-height: 55vh; overflow: auto; }
+    .hint { opacity: .78; font-size: .92rem; }
+    .danger { border-color: #c44; }
+  </style>
 </head>
 <body>
-  <main>
-    <section class="hero">
-      <h1>SSH Drop Dispatcher</h1>
-      <p>Public Magisk dispatcher with <code>dispatch-config</code>, backup/restore and support issue export.</p>
-    </section>
-    <section class="grid">
-      <button data-cmd="/data/adb/modules/ssh_drop_dispatcher/service.sh --runtime-status">Runtime status</button>
-      <button data-cmd="/data/adb/modules/ssh_drop_dispatcher/service.sh --doctor">Doctor</button>
-      <button data-cmd="/data/adb/modules/ssh_drop_dispatcher/service.sh --config-list">Config list</button>
-      <button data-cmd="/data/adb/ssh-drop-dispatcher/bin/dispatch-config install-termux-command">Install Termux command</button>
-      <button data-cmd="/data/adb/ssh-drop-dispatcher/bin/dispatch-config remove-termux-command">Remove Termux command</button>
-      <button data-cmd="/data/adb/ssh-drop-dispatcher/bin/dispatch-config issue">Create issue.txt</button>
-    </section>
-    <section>
-      <h2>Termux</h2>
-      <p>Open Termux and run:</p>
-      <pre>dispatch-config</pre>
-    </section>
-    <section>
-      <h2>Output</h2>
-      <pre id="output">WebUI ready. If root exec is unavailable in your manager, use Termux: dispatch-config</pre>
-    </section>
-  </main>
-  <script src="app.js"></script>
+  <h1>SSH Drop Dispatcher</h1>
+  <div class="hint">WebUI control for runtime status, safe pause/resume, dispatch-now and diagnostics.</div>
+
+  <h2>Control</h2>
+  <div class="grid">
+    <button onclick="run('status')">Refresh status</button>
+    <button onclick="run('enable')">Enable dispatcher</button>
+    <button class="danger" onclick="run('disable')">Disable dispatcher</button>
+    <button onclick="run('dispatch')">Dispatch now</button>
+  </div>
+
+  <h2>Diagnostics</h2>
+  <div class="grid">
+    <button onclick="run('doctor')">Doctor</button>
+    <button onclick="run('targets')">Target matrix</button>
+    <button onclick="run('log')">Log tail</button>
+    <button onclick="run('issue')">Create issue.txt</button>
+  </div>
+
+  <h2>Requeue file</h2>
+  <input id="file" placeholder="target-pi4__example.sh or full path">
+  <div style="height:8px"></div>
+  <button onclick="requeue()">Requeue selected file</button>
+
+  <h2>Output</h2>
+  <pre id="out">Loading status...</pre>
+
+<script>
+const svc = '/data/adb/modules/ssh_drop_dispatcher/service.sh';
+const cmds = {
+  status: `${svc} --webui-status`,
+  enable: `${svc} --enable`,
+  disable: `${svc} --disable`,
+  dispatch: `${svc} --dispatch-now`,
+  doctor: `${svc} --doctor`,
+  targets: `${svc} --config-list`,
+  log: `${svc} --webui-log-tail 180`,
+  issue: `/data/adb/ssh-drop-dispatcher/tools/dispatch-config.sh issue`
+};
+function show(text){ document.getElementById('out').textContent = text || '(no output)'; }
+function shellQuote(s){ return "'" + String(s).replace(/'/g, "'\''") + "'"; }
+async function execCommand(command){
+  show('$ ' + command + '
+
+Running...');
+  try {
+    if (window.ksu && typeof window.ksu.exec === 'function') {
+      const res = await window.ksu.exec(command);
+      const code = res && (res.code ?? res.errno ?? res.exitCode ?? 0);
+      const stdout = res && (res.stdout || res.out || '');
+      const stderr = res && (res.stderr || res.err || '');
+      show('$ ' + command + '
+rc=' + code + '
+
+' + stdout + (stderr ? '
+-- stderr --
+' + stderr : ''));
+      return;
+    }
+    if (window.apatch && typeof window.apatch.exec === 'function') {
+      const res = await window.apatch.exec(command);
+      show('$ ' + command + '
+
+' + JSON.stringify(res, null, 2));
+      return;
+    }
+    show('WebUI exec bridge not available. Run manually:
+
+su -c ' + shellQuote(command));
+  } catch (e) { show('ERROR running command:
+' + command + '
+
+' + e); }
+}
+function run(name){ execCommand(cmds[name]); }
+function requeue(){
+  const value = document.getElementById('file').value.trim();
+  if (!value) { show('Enter a file name or full path first.'); return; }
+  execCommand(`${svc} --requeue ${shellQuote(value)}`);
+}
+run('status');
+</script>
 </body>
 </html>

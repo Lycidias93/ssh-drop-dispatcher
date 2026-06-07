@@ -1,7 +1,7 @@
 id=ssh_drop_dispatcher
 name=SSH Drop Dispatcher
-version=4.11.0
-versionCode=4110010
+version=4.12.0-webui-control-rc1
+versionCode=4120001
 author=Lycidias93
-description=Android/Magisk SSH file-drop dispatcher with registry routing, Sortify marker contract, backup/restore, WebUI and private-runtime migration support
+description=Android/Magisk SSH file-drop dispatcher with WebUI controls, dispatch-now, pause/resume, Sortify marker contract, backup/restore and public onboarding
 updateJson=https://raw.githubusercontent.com/Lycidias93/ssh-drop-dispatcher/main/update.json

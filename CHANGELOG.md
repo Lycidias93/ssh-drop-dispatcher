@@ -1,3 +1,11 @@
+## 4.12.0-webui-control-rc1 - WebUI control candidate
+
+- Add WebUI control surface for runtime status, enable/disable, dispatch-now, doctor, target matrix, log tail, issue bundle and requeue.
+- Add dispatcher enable flag `DROP_DISPATCH_ENABLED=0|1` with safe pause behavior.
+- Add service commands `--enable`, `--disable`, `--dispatch-now`, `--webui-status` and `--webui-log-tail`.
+- Keep Sortify marker policy unchanged at `v4115`.
+- No DNS, HA, VIP, route, host drop-path or Sortify contract changes.
+
 <!-- SDD_SORTIFY_CROSS_REPO_LINK_CHANGELOG_20260601_START -->
 ## 2026-06-01 - README cross-link to Sortify Dispatch
 
