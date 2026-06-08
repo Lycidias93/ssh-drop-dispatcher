@@ -27,3 +27,13 @@ su -c /data/adb/modules/ssh_drop_dispatcher/service.sh --webui-log-tail 180
 `--dispatch-now` refuses to run while disabled.
 
 No DNS/HA/VIP/route or target drop-path changes are included.
+
+## RC2 strict routing / legacy SCP notes
+
+`4.12.0-webui-control-rc2` keeps the WebUI control surface from rc1 and tightens dispatch safety:
+
+- Strict target-prefix routing is enabled by default with `DROP_DISPATCH_STRICT_TARGET_PREFIX=1`.
+- Unprefixed files such as `berylax_config_snapshot_handover_*.md` are not dispatched just because a target token appears in the filename.
+- Sidecar files such as `*.sha256` are ignored by the dispatcher queue.
+- Target configs may set `scp_flags`; the effective default for `berylax` is `-O` for Dropbear/OpenWrt legacy SCP compatibility.
+- Sortify marker policy remains `v4115`; no DNS/HA/VIP/route or host drop-path changes are included.
