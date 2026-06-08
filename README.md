@@ -228,3 +228,7 @@ The resulting ZIP must be treated as sensitive when private keys are included.
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](./LICENSE).
+
+### v4.12.0 WebUI control rc2
+
+The rc2 candidate keeps the WebUI control work and adds stricter dispatch safety: only `target-*__*` and `targets-*__*` names are routed by default, checksum sidecars such as `*.sha256` are ignored, and target configs can set `scp_flags`. BerylAX uses legacy SCP mode (`-O`) for Dropbear/OpenWrt compatibility. Sortify marker policy remains `v4115`; DNS/HA/VIP/route and host drop paths are unchanged.

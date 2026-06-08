@@ -32,6 +32,7 @@ LAST_EVENT_FILE=$STATE_DIR/.last_event
 TMP_SCAN_LIST=$STATE_DIR/.scan.list
 TMP_PENDING_LIST=$STATE_DIR/.scan.pending
 PIDD_POLICY_VERSION=v4115
+# RC2 strict routing and legacy SCP support keep Sortify marker policy unchanged.
 SORTIFY_RELEASE_DIR=$STATE_DIR/integration/sortify-release
 
 SSH_BIN_DEFAULT=/data/data/com.termux/files/usr/bin/ssh
@@ -131,6 +132,7 @@ load_target_registry(){
     platform=
     shell=
     verify=
+    scp_flags=
     . "$cf"
     target_name=$(lower_name "$target_name")
     case "$target_name" in ""|*[!a-z0-9_]*) log "WARN target_registry invalid_name file=$cf"; continue;; esac
@@ -146,6 +148,13 @@ load_target_registry(){
     if [ -n "${verify:-}" ]; then
       set_dynamic_var "VERIFY_$target_name" "$verify"
     fi
+    if [ -z "${scp_flags:-}" ] && [ "$target_name" = "berylax" ]; then
+      scp_flags="-O"
+    fi
+    if [ -n "${scp_flags:-}" ]; then
+      printf "%s" "$scp_flags" | $GREP_BIN -Eq "^[A-Za-z0-9_ .:=,/@+-]*$" || { log "WARN target_registry invalid_scp_flags target=$target_name"; scp_flags=""; }
+    fi
+    [ -n "${scp_flags:-}" ] && set_dynamic_var "SCP_FLAGS_$target_name" "$scp_flags"
   done
   return 0
 }
@@ -159,8 +168,11 @@ registry_summary(){
       enabled=1
       ssh_host=
       remote_drop=
+      scp_flags=
       . "$cf"
-      printf "%s enabled=%s host=%s remote_drop=%s\n" "$target_name" "${enabled:-1}" "${ssh_host:-}" "${remote_drop:-}"
+      t_l=$(lower_name "${target_name:-}")
+      [ -z "${scp_flags:-}" ] && [ "$t_l" = "berylax" ] && scp_flags="-O"
+      printf "%s enabled=%s host=%s remote_drop=%s scp_flags=%s\n" "$target_name" "${enabled:-1}" "${ssh_host:-}" "${remote_drop:-}" "${scp_flags:-}"
     done
   else
     echo "missing targets_dir=$TARGETS_DIR"
@@ -194,6 +206,7 @@ create_default_config_if_missing(){
   [ -f "$CONFIG_FILE" ] && return 0
   {
     echo "DROP_DISPATCH_ENABLED=1"
+    echo "DROP_DISPATCH_STRICT_TARGET_PREFIX=1"
     echo "DROP_DISPATCH_SCAN_DIR=/storage/emulated/0/Download"
     echo "DROP_DISPATCH_SETTLE_SECONDS=2"
     echo "DROP_DISPATCH_FALLBACK_RESCAN_SECONDS=1800"
@@ -266,6 +279,7 @@ load_config(){
   [ -f "$CONFIG_FILE" ] || return 1
   . "$CONFIG_FILE"
   DROP_DISPATCH_ENABLED=${DROP_DISPATCH_ENABLED:-1}
+  DROP_DISPATCH_STRICT_TARGET_PREFIX=${DROP_DISPATCH_STRICT_TARGET_PREFIX:-1}
   DROP_DISPATCH_SCAN_DIR=${DROP_DISPATCH_SCAN_DIR:-${SCAN_DIR:-/storage/emulated/0/Download}}
   DROP_DISPATCH_SETTLE_SECONDS=${DROP_DISPATCH_SETTLE_SECONDS:-2}
   DROP_DISPATCH_FALLBACK_RESCAN_SECONDS=${DROP_DISPATCH_FALLBACK_RESCAN_SECONDS:-1800}
@@ -298,7 +312,8 @@ ensure_ssh_ready(){
 }
 
 is_partial(){ case "$1" in *.part|*.partial|*.tmp|*.crdownload|*.download|*.opdownload|*.aria2|*.swp|*.lock) return 0;; *) return 1;; esac; }
-is_supported(){ case "$1" in *.sh|*.zip|*.tar|*.tar.gz|*.tgz|*.tar.xz|*.txz|*.tar.bz2|*.tbz|*.tbz2|*.gz|*.xz|*.bz2|*.log|*.txt|*.md|*.json|*.conf|*.env) return 0;; *) return 1;; esac; }
+is_sidecar(){ case "$1" in *.sha256|*.sha256sum|*.md5|*.sig|*.asc) return 0;; *) return 1;; esac; }
+is_supported(){ is_sidecar "$1" && return 1; case "$1" in *.sh|*.zip|*.tar|*.tar.gz|*.tgz|*.tar.xz|*.txz|*.tar.bz2|*.tbz|*.tbz2|*.gz|*.xz|*.bz2|*.log|*.txt|*.md|*.json|*.conf|*.env) return 0;; *) return 1;; esac; }
 is_shell(){ case "$1" in *.sh) return 0;; *) return 1;; esac; }
 
 record(){
@@ -434,10 +449,15 @@ marker_targets_for(){
   return 1
 }
 
+strict_target_prefix(){
+  case "${DROP_DISPATCH_STRICT_TARGET_PREFIX:-1}" in 0|no|NO|false|FALSE|off|OFF) return 1 ;; *) return 0 ;; esac
+}
+
 targets_for(){
   l=$(lower_name "$1")
   mt=$(marker_targets_for "$l" 2>/dev/null || true)
   [ -n "$mt" ] && { printf "%s" "$mt"; return 0; }
+  strict_target_prefix && return 0
   out=""
   for t in $ACTIVE_TARGETS; do
     has_token "$l" "$t" && append_target "$t"
@@ -449,6 +469,7 @@ target_host(){ eval "printf '%s' \"\${HOST_$1:-}\""; }
 target_dir(){ eval "printf '%s' \"\${REMOTE_DIR_$1:-}\""; }
 target_shell(){ eval "v=\"\${SHELL_$1:-bash}\""; printf '%s' "$v"; }
 target_verify(){ eval "v=\"\${VERIFY_$1:-}\""; printf '%s' "$v"; }
+target_scp_flags(){ eval "v=\"\${SCP_FLAGS_$1:-}\""; printf '%s' "$v"; }
 
 remote_verify_basic(){
   host="$1"; dst="$2"; qdst=$(sq "$dst")
@@ -540,7 +561,8 @@ process_file(){
     qdst=$(sq "$dst")
 
     "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=8 "$host" "sh -c 'mkdir -p $qdir'" >/dev/null 2>&1 || { log "FAIL mkdir file=$base target=$t host=$host"; clear_inflight "$rec" "$t"; continue; }
-    "$SCP_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=12 "$file" "$host:$tmp" >/dev/null 2>&1 || { log "FAIL scp file=$base target=$t host=$host"; clear_inflight "$rec" "$t"; continue; }
+    scp_flags=$(target_scp_flags "$t")
+    "$SCP_BIN" $scp_flags -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=12 "$file" "$host:$tmp" >/dev/null 2>&1 || { log "FAIL scp file=$base target=$t host=$host scp_flags=$(sq "$scp_flags")"; clear_inflight "$rec" "$t"; continue; }
     "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=8 "$host" "sh -c 'mv -f $qtmp $qdst'" >/dev/null 2>&1 || { log "FAIL rename file=$base target=$t host=$host"; clear_inflight "$rec" "$t"; continue; }
 
     if is_shell "$base"; then
@@ -733,6 +755,7 @@ webui_status(){
   echo "version=$($GREP_BIN -E '^version=' "$MODDIR/module.prop" 2>/dev/null | $SED_BIN 's/^version=//' | $SED_BIN -n '1p')"
   echo "versionCode=$($GREP_BIN -E '^versionCode=' "$MODDIR/module.prop" 2>/dev/null | $SED_BIN 's/^versionCode=//' | $SED_BIN -n '1p')"
   echo "dispatcher_enabled=${DROP_DISPATCH_ENABLED:-1}"
+  echo "strict_target_prefix=${DROP_DISPATCH_STRICT_TARGET_PREFIX:-1}"
   dispatcher_enabled && echo "dispatcher_state=enabled" || echo "dispatcher_state=disabled"
   echo "scan_dir=${DROP_DISPATCH_SCAN_DIR:-}"
   echo "state_dir=$STATE_DIR"

@@ -1,5 +1,14 @@
 ## 4.12.0-webui-control-rc1 - WebUI control candidate
 
+## 4.12.0-webui-control-rc2 - WebUI control rc2
+
+- Add strict target-prefix routing by default: only `target-*__*` and `targets-*__*` names are dispatched.
+- Ignore sidecar checksum/signature files such as `*.sha256`.
+- Add per-target `scp_flags` support with BerylAX legacy SCP fallback `-O`.
+- Preserve Sortify `v4115` release-marker contract unchanged.
+- No DNS/HA/VIP/route or host drop-path changes.
+
+
 - Add WebUI control surface for runtime status, enable/disable, dispatch-now, doctor, target matrix, log tail, issue bundle and requeue.
 - Add dispatcher enable flag `DROP_DISPATCH_ENABLED=0|1` with safe pause behavior.
 - Add service commands `--enable`, `--disable`, `--dispatch-now`, `--webui-status` and `--webui-log-tail`.
