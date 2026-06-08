@@ -224,3 +224,7 @@ The resulting ZIP must be treated as sensitive when private keys are included.
 - Adds a Sortify release marker directory and writes completion markers after all selected targets finish.
 - Keeps prompt-safe private-runtime export behavior from rc4.
 - Public defaults remain generic and contain no private targets, paths, IPs or keys.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](./LICENSE).
