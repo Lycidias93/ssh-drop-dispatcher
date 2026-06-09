@@ -232,3 +232,25 @@ This project is licensed under the MIT License. See [LICENSE](./LICENSE).
 ### v4.12.0 WebUI control rc2
 
 The rc2 candidate keeps the WebUI control work and adds stricter dispatch safety: only `target-*__*` and `targets-*__*` names are routed by default, checksum sidecars such as `*.sha256` are ignored, and target configs can set `scp_flags`. BerylAX uses legacy SCP mode (`-O`) for Dropbear/OpenWrt compatibility. Sortify marker policy remains `v4115`; DNS/HA/VIP/route and host drop paths are unchanged.
+
+<!-- SDD_V4120_FINAL_README_START -->
+## SSH Drop Dispatcher v4.12.0 final
+
+`v4.12.0` promotes the WebUI control candidate after rc2 runtime smoke passed on Pixel/Magisk.
+
+Included:
+
+- WebUI and CLI enable/disable controls.
+- Bounded `dispatch-now` / `scan-now` trigger.
+- Strict `target-*__` / `targets-*__` routing; unprefixed handover/local files are ignored.
+- Queue ignore for sidecars such as `*.sha256`.
+- Per-target SCP flags with BerylAX/OpenWrt Dropbear legacy-SCP fallback `-O`.
+- Sortify marker contract remains dispatcher-authoritative with policy `v4115`.
+
+Known verification notes:
+
+- Use the dispatcher SSH config for validation: `/data/adb/ssh-drop-dispatcher/ssh/ssh-config.dispatch`.
+- Do not validate dispatcher delivery with plain Termux `ssh pi4` / `ssh berylax` unless that exact key context is known.
+- OpenSSH post-quantum warnings can appear before command output; log parsers must filter for digest lines.
+- Root `su -c` may not provide a writable `HOME`; use explicit temp paths.
+<!-- SDD_V4120_FINAL_README_END -->

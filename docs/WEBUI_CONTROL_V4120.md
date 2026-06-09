@@ -1,5 +1,24 @@
 # SSH Drop Dispatcher 4.12.0-webui-control-rc1 WebUI Control Candidate
 
+<!-- SDD_V4120_FINAL_DOC_START -->
+## Final v4.12.0 release notes
+
+`v4.12.0` keeps the rc2 runtime-proven behavior as stable:
+
+- Strict target-prefix routing is enabled.
+- Sidecar files such as `*.sha256` are ignored by the dispatcher queue.
+- BerylAX/OpenWrt Dropbear delivery uses the legacy SCP fallback `-O` when target config omits explicit `scp_flags`.
+- Sortify marker policy remains `v4115`.
+- No DNS/HA/VIP/route or host drop-path changes are part of this release.
+
+Verification gotchas captured from rc2 smoke:
+
+- Use the dispatcher SSH config, not normal Termux aliases, for host validation.
+- Ignore OpenSSH post-quantum warning lines when extracting SHA256 output.
+- Avoid `$HOME/.cache` in root-run scripts unless `HOME` is explicitly set.
+<!-- SDD_V4120_FINAL_DOC_END -->
+
+
 Status: candidate source patch.
 
 ## Goals
