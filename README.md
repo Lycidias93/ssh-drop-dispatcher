@@ -254,3 +254,13 @@ Known verification notes:
 - OpenSSH post-quantum warnings can appear before command output; log parsers must filter for digest lines.
 - Root `su -c` may not provide a writable `HOME`; use explicit temp paths.
 <!-- SDD_V4120_FINAL_README_END -->
+
+## v4.12.1 delivery safety candidate
+
+The v4.12.1 candidate adds target-specific delivery safety checks and on-device diagnostics:
+
+- `--verify-targets` / `--verify-target <target>` for SSH, drop path and space policy checks.
+- `--route-explain <file>` for prefix, target and dispatch-state diagnostics.
+- Remote free-space gates before upload.
+- BerylAX-specific defaults: 50 MiB minimum free space, 100 MiB warning, 20 MiB max artifact size.
+- Sortify marker policy remains `v4115`.
