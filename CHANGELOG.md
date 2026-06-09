@@ -1,5 +1,24 @@
 ## 4.12.0-webui-control-rc1 - WebUI control candidate
 
+<!-- SDD_V4120_FINAL_CHANGELOG_START -->
+## v4.12.0 - 2026-06-08
+
+- Promotes the WebUI control release to stable `4.12.0` after rc2 runtime smoke passed on Pixel/Magisk.
+- Adds WebUI/CLI pause-resume and dispatch-now control without changing DNS, HA, VIP, route, Sortify marker policy, or host drop paths.
+- Enforces strict target-prefix routing so unprefixed handover/local files are ignored instead of routed by target-name tokens.
+- Ignores sidecar artifacts such as `*.sha256` in the dispatcher queue.
+- Adds per-target SCP flags and the BerylAX/OpenWrt Dropbear legacy-SCP fallback `-O`.
+- Preserves Sortify release marker policy `v4115` and the dispatcher authority marker contract.
+
+### Known verification notes
+
+- Verify hosts through `/data/adb/ssh-drop-dispatcher/ssh/ssh-config.dispatch`; direct Termux SSH aliases may fall back to password auth.
+- OpenSSH post-quantum warnings can precede command output; SHA parsers must select the first 64-hex digest line, not the first output line.
+- `su -c` may have an empty or root-only `HOME`; scripts should set `HOME=/data/data/com.termux/files/home` or use explicit temp paths.
+- BerylAX `scp_flags=-O` may come from the service fallback even when the persisted runtime target config omits it.
+<!-- SDD_V4120_FINAL_CHANGELOG_END -->
+
+
 ## 4.12.0-webui-control-rc2 - WebUI control rc2
 
 - Add strict target-prefix routing by default: only `target-*__*` and `targets-*__*` names are dispatched.
