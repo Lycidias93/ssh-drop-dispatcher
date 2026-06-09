@@ -1,3 +1,12 @@
+
+## 4.12.1-delivery-safety-rc1
+
+- Add target-specific delivery space policy gates before remote upload.
+- Add `--verify-targets`, `--verify-target <target>`, and `--route-explain <file>` diagnostics.
+- Harden ssh/scp binary resolution in the Magisk service context.
+- Keep Sortify marker policy `v4115` unchanged.
+- Keep `update.json` on stable `4.12.0` during rc validation.
+
 ## 4.12.0-webui-control-rc1 - WebUI control candidate
 
 <!-- SDD_V4120_FINAL_CHANGELOG_START -->

@@ -32,10 +32,11 @@ LAST_EVENT_FILE=$STATE_DIR/.last_event
 TMP_SCAN_LIST=$STATE_DIR/.scan.list
 TMP_PENDING_LIST=$STATE_DIR/.scan.pending
 PIDD_POLICY_VERSION=v4115
-# RC2 strict routing and legacy SCP support keep Sortify marker policy unchanged.
+# v4.12.1 delivery-safety keeps Sortify marker policy unchanged.
 SORTIFY_RELEASE_DIR=$STATE_DIR/integration/sortify-release
 
 SSH_BIN_DEFAULT=/data/data/com.termux/files/usr/bin/ssh
+SCP_BIN_DEFAULT=/data/data/com.termux/files/usr/bin/scp
 BASH_BIN_DEFAULT=/data/data/com.termux/files/usr/bin/bash
 GETPROP_BIN=/system/bin/getprop
 FIND_BIN=/system/bin/find
@@ -214,6 +215,16 @@ create_default_config_if_missing(){
     echo "DROP_DISPATCH_STALE_LOCK_SECONDS=600"
     echo "DROP_DISPATCH_WATCHDOG_SECONDS=60"
     echo "SSH_BIN=$SSH_BIN_DEFAULT"
+    echo "SCP_BIN=$SCP_BIN_DEFAULT"
+    echo "REMOTE_MIN_FREE_KB_pi3=3145728"
+    echo "REMOTE_MIN_FREE_KB_pi4=3145728"
+    echo "REMOTE_MIN_FREE_KB_zeropi2=524288"
+    echo "REMOTE_MIN_FREE_KB_berylax=51200"
+    echo "REMOTE_WARN_FREE_KB_pi3=5242880"
+    echo "REMOTE_WARN_FREE_KB_pi4=5242880"
+    echo "REMOTE_WARN_FREE_KB_zeropi2=1048576"
+    echo "REMOTE_WARN_FREE_KB_berylax=102400"
+    echo "REMOTE_MAX_ARTIFACT_KB_berylax=20480"
     echo "HOST_alpha=alpha"
     echo "HOST_beta=beta"
     echo "HOST_edge=edge"
@@ -288,8 +299,20 @@ load_config(){
   DROP_DISPATCH_STALE_LOCK_SECONDS=${DROP_DISPATCH_STALE_LOCK_SECONDS:-600}
   DROP_DISPATCH_WATCHDOG_SECONDS=${DROP_DISPATCH_WATCHDOG_SECONDS:-60}
   SSH_BIN=${SSH_BIN:-$SSH_BIN_DEFAULT}
-  SCP_BIN=$(dirname "$SSH_BIN")/scp
+  [ -x "$SSH_BIN" ] || SSH_BIN="$SSH_BIN_DEFAULT"
+  SCP_BIN=${SCP_BIN:-$SCP_BIN_DEFAULT}
+  [ -x "$SCP_BIN" ] || SCP_BIN=$(dirname "$SSH_BIN")/scp
+  [ -x "$SCP_BIN" ] || SCP_BIN="$SCP_BIN_DEFAULT"
   BASH_BIN=${BASH_BIN:-$BASH_BIN_DEFAULT}
+  REMOTE_MIN_FREE_KB_pi3=${REMOTE_MIN_FREE_KB_pi3:-3145728}
+  REMOTE_MIN_FREE_KB_pi4=${REMOTE_MIN_FREE_KB_pi4:-3145728}
+  REMOTE_MIN_FREE_KB_zeropi2=${REMOTE_MIN_FREE_KB_zeropi2:-524288}
+  REMOTE_MIN_FREE_KB_berylax=${REMOTE_MIN_FREE_KB_berylax:-51200}
+  REMOTE_WARN_FREE_KB_pi3=${REMOTE_WARN_FREE_KB_pi3:-5242880}
+  REMOTE_WARN_FREE_KB_pi4=${REMOTE_WARN_FREE_KB_pi4:-5242880}
+  REMOTE_WARN_FREE_KB_zeropi2=${REMOTE_WARN_FREE_KB_zeropi2:-1048576}
+  REMOTE_WARN_FREE_KB_berylax=${REMOTE_WARN_FREE_KB_berylax:-102400}
+  REMOTE_MAX_ARTIFACT_KB_berylax=${REMOTE_MAX_ARTIFACT_KB_berylax:-20480}
   HOST_alpha=${HOST_alpha:-alpha}
   HOST_beta=${HOST_beta:-beta}
   HOST_edge=${HOST_edge:-edge}
@@ -471,6 +494,193 @@ target_shell(){ eval "v=\"\${SHELL_$1:-bash}\""; printf '%s' "$v"; }
 target_verify(){ eval "v=\"\${VERIFY_$1:-}\""; printf '%s' "$v"; }
 target_scp_flags(){ eval "v=\"\${SCP_FLAGS_$1:-}\""; printf '%s' "$v"; }
 
+# v4.12.1 delivery-safety helpers: target-specific space gates and diagnostics.
+target_min_free_kb(){
+  case "$1" in
+    pi3|pi4) printf "%s" "${REMOTE_MIN_FREE_KB_pi4:-3145728}" ;;
+    zeropi2) printf "%s" "${REMOTE_MIN_FREE_KB_zeropi2:-524288}" ;;
+    berylax) printf "%s" "${REMOTE_MIN_FREE_KB_berylax:-51200}" ;;
+    *) printf "%s" "${REMOTE_MIN_FREE_KB_default:-524288}" ;;
+  esac
+}
+
+target_warn_free_kb(){
+  case "$1" in
+    pi3|pi4) printf "%s" "${REMOTE_WARN_FREE_KB_pi4:-5242880}" ;;
+    zeropi2) printf "%s" "${REMOTE_WARN_FREE_KB_zeropi2:-1048576}" ;;
+    berylax) printf "%s" "${REMOTE_WARN_FREE_KB_berylax:-102400}" ;;
+    *) printf "%s" "${REMOTE_WARN_FREE_KB_default:-1048576}" ;;
+  esac
+}
+
+target_max_artifact_kb(){
+  case "$1" in
+    berylax) printf "%s" "${REMOTE_MAX_ARTIFACT_KB_berylax:-20480}" ;;
+    zeropi2) printf "%s" "${REMOTE_MAX_ARTIFACT_KB_zeropi2:-524288}" ;;
+    *) printf "%s" "${REMOTE_MAX_ARTIFACT_KB_default:-0}" ;;
+  esac
+}
+
+to_int_or_zero(){
+  case "$1" in ""|*[!0-9]*) printf "0" ;; *) printf "%s" "$1" ;; esac
+}
+
+file_size_kb(){
+  bytes=$(file_size_bytes "$1")
+  bytes=$(to_int_or_zero "$bytes")
+  printf "%s" $(((bytes + 1023) / 1024))
+}
+
+remote_available_kb(){
+  host="$1"; dir="$2"; qdir=$(sq "$dir")
+  "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=10 "$host" "sh -c 'df -P -k $qdir 2>/dev/null | awk \"NR==2{print \\\$4}\"'" 2>/dev/null | $GREP_BIN -E "^[0-9]+$" | $TAIL_BIN -n 1
+}
+
+remote_inode_available(){
+  host="$1"; dir="$2"; qdir=$(sq "$dir")
+  "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=10 "$host" "sh -c 'df -P -i $qdir 2>/dev/null | awk \"NR==2{print \\\$4}\"'" 2>/dev/null | $GREP_BIN -E "^[0-9]+$" | $TAIL_BIN -n 1
+}
+
+remote_drop_writable(){
+  host="$1"; dir="$2"; qdir=$(sq "$dir")
+  "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=10 "$host" "sh -c 'test -d $qdir && test -w $qdir'" >/dev/null 2>&1
+}
+
+delivery_space_gate(){
+  target="$1"; host="$2"; dir="$3"; file="$4"; base="$5"
+  min_kb=$(to_int_or_zero "$(target_min_free_kb "$target")")
+  warn_kb=$(to_int_or_zero "$(target_warn_free_kb "$target")")
+  max_kb=$(to_int_or_zero "$(target_max_artifact_kb "$target")")
+  art_kb=$(file_size_kb "$file")
+  avail_kb=$(remote_available_kb "$host" "$dir")
+  avail_kb=$(to_int_or_zero "$avail_kb")
+  required_kb=$((min_kb + art_kb))
+
+  if [ "$avail_kb" -le 0 ]; then
+    log "FAIL space unreadable file=$base target=$target host=$host dir=$dir"
+    return 1
+  fi
+  if [ "$max_kb" -gt 0 ] && [ "$art_kb" -gt "$max_kb" ]; then
+    log "FAIL artifact_too_large file=$base target=$target artifact_kb=$art_kb max_artifact_kb=$max_kb"
+    return 1
+  fi
+  if [ "$avail_kb" -lt "$required_kb" ]; then
+    log "FAIL remote_space file=$base target=$target avail_kb=$avail_kb required_kb=$required_kb min_free_kb=$min_kb artifact_kb=$art_kb"
+    return 1
+  fi
+  if [ "$warn_kb" -gt 0 ] && [ "$avail_kb" -lt "$warn_kb" ]; then
+    log "WARN remote_space_low file=$base target=$target avail_kb=$avail_kb warn_free_kb=$warn_kb"
+  fi
+  log "PASS space file=$base target=$target avail_kb=$avail_kb min_free_kb=$min_kb artifact_kb=$art_kb max_artifact_kb=$max_kb"
+  return 0
+}
+
+verify_target_one(){
+  t="$1"
+  target_known "$t" || { echo "target=$t known=no final_gate=FAIL"; return 1; }
+  host=$(target_host "$t")
+  dir=$(target_dir "$t")
+  scp_flags=$(target_scp_flags "$t")
+  shell=$(target_shell "$t")
+  min_kb=$(target_min_free_kb "$t")
+  warn_kb=$(target_warn_free_kb "$t")
+  max_kb=$(target_max_artifact_kb "$t")
+  echo "target=$t"
+  echo "enabled=yes"
+  echo "host=$host"
+  echo "remote_drop=$dir"
+  echo "shell=$shell"
+  echo "scp_flags=$scp_flags"
+  echo "remote_min_free_kb=$min_kb"
+  echo "remote_warn_free_kb=$warn_kb"
+  echo "remote_max_artifact_kb=$max_kb"
+
+  if "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=10 "$host" "echo ssh_auth=PASS" 2>/dev/null; then
+    :
+  else
+    echo "ssh_auth=FAIL"
+    echo "final_gate=FAIL"
+    return 1
+  fi
+
+  if remote_drop_writable "$host" "$dir"; then
+    echo "remote_drop_writable=PASS"
+  else
+    echo "remote_drop_writable=FAIL"
+    echo "final_gate=FAIL"
+    return 1
+  fi
+
+  avail=$(remote_available_kb "$host" "$dir")
+  avail=$(to_int_or_zero "$avail")
+  inodes=$(remote_inode_available "$host" "$dir")
+  inodes=$(to_int_or_zero "$inodes")
+  echo "remote_available_kb=$avail"
+  echo "remote_available_inodes=$inodes"
+  if [ "$avail" -lt "$min_kb" ]; then
+    echo "remote_space_gate=FAIL"
+    echo "final_gate=FAIL"
+    return 1
+  fi
+  if [ "$warn_kb" -gt 0 ] && [ "$avail" -lt "$warn_kb" ]; then
+    echo "remote_space_gate=WARN"
+  else
+    echo "remote_space_gate=PASS"
+  fi
+  echo "final_gate=PASS"
+  return 0
+}
+
+verify_targets(){
+  ensure_ssh_ready || return 1
+  rc=0
+  for t in $ACTIVE_TARGETS; do
+    echo "== verify target $t =="
+    verify_target_one "$t" || rc=1
+  done
+  return "$rc"
+}
+
+route_explain(){
+  in="$1"
+  [ -n "$in" ] || { echo "route_explain=FAIL missing_file"; return 1; }
+  case "$in" in /*) file="$in" ;; *) file="$DROP_DISPATCH_SCAN_DIR/$in" ;; esac
+  base=$($BASENAME_BIN "$file")
+  lower=$(lower_name "$base")
+  echo "file=$file"
+  echo "base=$base"
+  [ -f "$file" ] && echo "exists=yes" || echo "exists=no"
+  is_partial "$base" && echo "partial=yes" || echo "partial=no"
+  is_sidecar "$base" && echo "sidecar=yes" || echo "sidecar=no"
+  is_supported "$base" && echo "supported=yes" || echo "supported=no"
+  strict_target_prefix && echo "strict_target_prefix=yes" || echo "strict_target_prefix=no"
+  mt=$(marker_targets_for "$lower" 2>/dev/null || true)
+  if [ -n "$mt" ]; then
+    echo "marker_targets=$mt"
+    echo "route_reason=target_prefix"
+  else
+    echo "marker_targets="
+    strict_target_prefix && echo "route_reason=strict_no_valid_prefix" || echo "route_reason=legacy_token_fallback"
+  fi
+  tg=$(targets_for "$base")
+  echo "targets=$tg"
+  if [ -f "$file" ]; then
+    rec=$(record "$file")
+    echo "rec=$rec"
+    for db in dispatch.done dispatch.complete dispatch.faildb dispatch.inflight dispatch.quarantined; do
+      echo "--- $db"
+      $GREP_BIN -F "$rec" "$STATE_DIR/$db" 2>/dev/null || true
+    done
+  else
+    echo "rec=unknown"
+  fi
+  echo "--- last scan"
+  [ -f "$LAST_SCAN_FILE" ] && $CAT_BIN "$LAST_SCAN_FILE" 2>/dev/null || echo "none"
+  echo "--- log"
+  $GREP_BIN -F "$base" "$LOG_FILE" 2>/dev/null | $TAIL_BIN -n 80 || true
+}
+
+
 remote_verify_basic(){
   host="$1"; dst="$2"; qdst=$(sq "$dst")
   "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=8 "$host" "sh -c 'test -f $qdst && test -s $qdst'" >/dev/null 2>&1
@@ -560,6 +770,7 @@ process_file(){
     qtmp=$(sq "$tmp")
     qdst=$(sq "$dst")
 
+    delivery_space_gate "$t" "$host" "$dir" "$file" "$base" || { clear_inflight "$rec" "$t"; continue; }
     "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=8 "$host" "sh -c 'mkdir -p $qdir'" >/dev/null 2>&1 || { log "FAIL mkdir file=$base target=$t host=$host"; clear_inflight "$rec" "$t"; continue; }
     scp_flags=$(target_scp_flags "$t")
     "$SCP_BIN" $scp_flags -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=12 "$file" "$host:$tmp" >/dev/null 2>&1 || { log "FAIL scp file=$base target=$t host=$host scp_flags=$(sq "$scp_flags")"; clear_inflight "$rec" "$t"; continue; }
@@ -790,6 +1001,13 @@ runtime_status(){
   echo "== version =="
   $GREP_BIN -E "^(version=|versionCode=)" "$MODDIR/module.prop" 2>/dev/null || true
   registry_summary
+  echo "== delivery policy =="
+  echo "pi3_min_free_kb=${REMOTE_MIN_FREE_KB_pi3:-3145728}"
+  echo "pi4_min_free_kb=${REMOTE_MIN_FREE_KB_pi4:-3145728}"
+  echo "zeropi2_min_free_kb=${REMOTE_MIN_FREE_KB_zeropi2:-524288}"
+  echo "berylax_min_free_kb=${REMOTE_MIN_FREE_KB_berylax:-51200}"
+  echo "berylax_warn_free_kb=${REMOTE_WARN_FREE_KB_berylax:-102400}"
+  echo "berylax_max_artifact_kb=${REMOTE_MAX_ARTIFACT_KB_berylax:-20480}"
   echo "== tools =="
   for x in dispatch-config.sh pidd-config.sh pidd-doctor.sh pidd-health.sh pidd-migrate-config.sh; do
     [ -x "$TOOLS_DIR/$x" ] && echo "$x=ok" || echo "$x=missing"
@@ -907,6 +1125,15 @@ case "${1:-}" in
   --scan-once)
     reason="${2:-manual_scan}"
     wait_boot; import_bundle_if_needed; load_config || exit 1; ensure_ssh_ready || exit 1; scan_once "$reason"
+    ;;
+  --verify-targets)
+    wait_boot; import_bundle_if_needed; load_config || exit 1; verify_targets
+    ;;
+  --verify-target)
+    wait_boot; import_bundle_if_needed; load_config || exit 1; ensure_ssh_ready || exit 1; verify_target_one "${2:-}"
+    ;;
+  --route-explain)
+    wait_boot; import_bundle_if_needed; load_config || exit 1; route_explain "${2:-}"
     ;;
   --status)
     wait_boot; import_bundle_if_needed; load_config || exit 1; status_file "${2:-}"
