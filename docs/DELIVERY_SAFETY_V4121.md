@@ -1,6 +1,6 @@
 # SSH Drop Dispatcher v4.12.1 delivery safety
 
-Status: release candidate scope.
+Status: release candidate scope; rc2 adds explicit break-glass Direct-SCP.
 
 ## Purpose
 
@@ -39,3 +39,24 @@ service.sh --route-explain /storage/emulated/0/Download/target-pi4__example.txt
 - BerylAX has a small overlay; large artifacts are blocked by target policy.
 - Unprefixed handover files must not route. Remote dispatch requires `target-*__` or `targets-*__`.
 - Direct SCP is break-glass only and requires explicit operator approval plus evidence.
+## Break-glass Direct-SCP
+
+`v4.12.1-delivery-safety-rc2` adds a manual break-glass upload command for cases where normal dispatcher delivery is blocked but the operator explicitly approves a controlled fallback:
+
+```text
+service.sh --breakglass-scp <file> <target>
+service.sh --breakglass-status <file>
+service.sh --breakglass-log-tail [lines]
+```
+
+Rules:
+
+- Break-glass is never automatic.
+- The file must be supported and must not be partial or a checksum/signature sidecar.
+- The file name must use a valid `target-*__` or `targets-*__` prefix and include the explicit target.
+- Target-specific space policy must pass before upload.
+- Upload uses the configured dispatcher SSH config and target `scp_flags`; BerylAX keeps `-O`.
+- Upload writes a temporary remote file and then performs an atomic rename.
+- Remote SHA-256 must match local SHA-256.
+- Evidence is appended to `/data/adb/ssh-drop-dispatcher/breakglass.log`.
+- Host execution is not part of break-glass and remains a separate verify/run gate.

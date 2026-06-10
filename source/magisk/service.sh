@@ -16,6 +16,7 @@ FAIL_DB=$STATE_DIR/dispatch.faildb
 QUAR_DB=$STATE_DIR/dispatch.quarantined
 INFLIGHT_DB=$STATE_DIR/dispatch.inflight
 COMPLETE_DB=$STATE_DIR/dispatch.complete
+BREAKGLASS_LOG=$STATE_DIR/breakglass.log
 HEALTH_FILE=$STATE_DIR/health.env
 IMPORT_STAMP=$STATE_DIR/.bundle.imported.version
 BUNDLE_DIR=/storage/emulated/0/PixelDropDispatch/main-bundle
@@ -61,7 +62,7 @@ TOYBOX_BIN=/system/bin/toybox
 TAIL_BIN=/system/bin/tail
 
 $MKDIR_BIN -p "$LOG_DIR" "$SSH_DIR" "$SORTIFY_RELEASE_DIR" >/dev/null 2>&1
-$TOUCH_BIN "$LOG_FILE" "$DONE_FILE" "$FAIL_DB" "$QUAR_DB" "$INFLIGHT_DB" "$COMPLETE_DB" >/dev/null 2>&1
+$TOUCH_BIN "$LOG_FILE" "$DONE_FILE" "$FAIL_DB" "$QUAR_DB" "$INFLIGHT_DB" "$COMPLETE_DB" "$BREAKGLASS_LOG" >/dev/null 2>&1
 
 log(){ printf "%s %s\n" "$( $DATE_BIN "+%F %T")" "$*" >> "$LOG_FILE"; }
 pid_alive(){ p="$1"; [ -n "$p" ] && $KILL_BIN -0 "$p" >/dev/null 2>&1; }
@@ -494,7 +495,7 @@ target_shell(){ eval "v=\"\${SHELL_$1:-bash}\""; printf '%s' "$v"; }
 target_verify(){ eval "v=\"\${VERIFY_$1:-}\""; printf '%s' "$v"; }
 target_scp_flags(){ eval "v=\"\${SCP_FLAGS_$1:-}\""; printf '%s' "$v"; }
 
-# v4.12.1 delivery-safety helpers: target-specific space gates and diagnostics.
+# v4.12.1 delivery-safety helpers: target-specific space gates, diagnostics and break-glass SCP.
 target_min_free_kb(){
   case "$1" in
     pi3|pi4) printf "%s" "${REMOTE_MIN_FREE_KB_pi4:-3145728}" ;;
@@ -680,6 +681,137 @@ route_explain(){
   $GREP_BIN -F "$base" "$LOG_FILE" 2>/dev/null | $TAIL_BIN -n 80 || true
 }
 
+
+# v4.12.1-rc2 break-glass Direct-SCP helpers.
+breakglass_fail(){
+  reason="$1"
+  file="${2:-}"
+  target="${3:-}"
+  log "BREAKGLASS_FAIL reason=$reason file=$file target=$target host_run=no policy=$PIDD_POLICY_VERSION"
+  echo "breakglass_scp=FAIL"
+  echo "reason=$reason"
+  echo "file=$file"
+  echo "target=$target"
+  echo "host_run=no"
+  return 1
+}
+
+remote_sha256(){
+  host="$1"
+  path="$2"
+  qpath=$(sq "$path")
+  "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=12 "$host" "sh -c 'if command -v sha256sum >/dev/null 2>&1; then sha256sum $qpath; elif command -v busybox >/dev/null 2>&1; then busybox sha256sum $qpath; else cksum $qpath; fi'" 2>/dev/null | $GREP_BIN -E "^[0-9a-f]{64}[[:space:]]" | $TAIL_BIN -n 1 | while read -r h rest; do printf "%s" "$h"; done
+}
+
+breakglass_evidence(){
+  file="$1"; base="$2"; target="$3"; host="$4"; remote="$5"; local_sha="$6"; remote_sha="$7"; size="$8"; scp_flags="$9"
+  {
+    printf "%s " "$($DATE_BIN '+%F %T' 2>/dev/null || echo now)"
+    printf "BREAKGLASS upload file=%s target=%s host=%s remote=%s sha256=%s remote_sha256=%s size=%s scp_flags=%s policy=%s host_run=no\n" \
+      "$base" "$target" "$host" "$remote" "$local_sha" "$remote_sha" "$size" "$(sq "$scp_flags")" "$PIDD_POLICY_VERSION"
+  } >> "$BREAKGLASS_LOG" 2>/dev/null || true
+  log "BREAKGLASS upload file=$base target=$target host=$host remote=$remote sha256=$local_sha policy=$PIDD_POLICY_VERSION host_run=no"
+}
+
+breakglass_scp(){
+  in="$1"
+  target="$2"
+  [ -n "$in" ] || { breakglass_fail missing_file "" "$target"; return 1; }
+  [ -n "$target" ] || { breakglass_fail missing_target "$in" ""; return 1; }
+  target=$(lower_name "$target")
+  target_known "$target" || { breakglass_fail unknown_target "$in" "$target"; return 1; }
+
+  case "$in" in /*) file="$in" ;; *) file="$DROP_DISPATCH_SCAN_DIR/$in" ;; esac
+  [ -f "$file" ] || { breakglass_fail missing_local_file "$file" "$target"; return 1; }
+
+  base=$($BASENAME_BIN "$file")
+  lower=$(lower_name "$base")
+  is_partial "$base" && { breakglass_fail partial_file "$file" "$target"; return 1; }
+  is_sidecar "$base" && { breakglass_fail sidecar_blocked "$file" "$target"; return 1; }
+  is_supported "$base" || { breakglass_fail unsupported_file_type "$file" "$target"; return 1; }
+
+  route_targets=$(marker_targets_for "$lower" 2>/dev/null || true)
+  [ -n "$route_targets" ] || { breakglass_fail invalid_or_missing_target_prefix "$file" "$target"; return 1; }
+  case " $route_targets " in *" $target "*) ;; *) breakglass_fail target_not_in_file_prefix "$file" "$target"; return 1;; esac
+
+  if is_shell "$base"; then
+    local_sh_preflight "$file" "$base" "$target" || { breakglass_fail local_preflight_failed "$file" "$target"; return 1; }
+  fi
+
+  host=$(target_host "$target")
+  dir=$(target_dir "$target")
+  [ -n "$host" ] || { breakglass_fail missing_host "$file" "$target"; return 1; }
+  [ -n "$dir" ] || { breakglass_fail missing_remote_drop "$file" "$target"; return 1; }
+
+  delivery_space_gate "$target" "$host" "$dir" "$file" "$base" || { breakglass_fail space_policy "$file" "$target"; return 1; }
+
+  dst="$dir/$base"
+  tmp="$dir/.$base.breakglass.tmp.$$"
+  qdir=$(sq "$dir")
+  qtmp=$(sq "$tmp")
+  qdst=$(sq "$dst")
+  size=$(file_size_bytes "$file")
+  local_sha=$(file_sha256 "$file")
+  scp_flags=$(target_scp_flags "$target")
+
+  "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=8 "$host" "sh -c 'mkdir -p $qdir && test -d $qdir && test -w $qdir'" >/dev/null 2>&1 || { breakglass_fail remote_drop_not_writable "$file" "$target"; return 1; }
+  "$SCP_BIN" $scp_flags -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=12 "$file" "$host:$tmp" >/dev/null 2>&1 || { breakglass_fail scp_failed "$file" "$target"; return 1; }
+  "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=8 "$host" "sh -c 'mv -f $qtmp $qdst'" >/dev/null 2>&1 || { breakglass_fail rename_failed "$file" "$target"; return 1; }
+
+  if is_shell "$base"; then
+    "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=8 "$host" "sh -c 'chmod 755 $qdst'" >/dev/null 2>&1 || true
+    remote_verify_script "$target" "$host" "$dst" || { breakglass_fail remote_script_verify_failed "$file" "$target"; return 1; }
+  else
+    remote_verify_basic "$host" "$dst" || { breakglass_fail remote_basic_verify_failed "$file" "$target"; return 1; }
+  fi
+
+  remote_sha=$(remote_sha256 "$host" "$dst")
+  local_len=$(printf "%s" "$local_sha" | $WC_BIN -c | $TR_BIN -d " " 2>/dev/null)
+  [ "$local_len" = "64" ] || { breakglass_fail local_sha_unavailable "$file" "$target"; return 1; }
+  [ "$remote_sha" = "$local_sha" ] || { echo "local_sha256=$local_sha"; echo "remote_sha256=$remote_sha"; breakglass_fail remote_sha_mismatch "$file" "$target"; return 1; }
+
+  breakglass_evidence "$file" "$base" "$target" "$host" "$dst" "$local_sha" "$remote_sha" "$size" "$scp_flags"
+  echo "breakglass_scp=PASS"
+  echo "file=$file"
+  echo "base=$base"
+  echo "target=$target"
+  echo "host=$host"
+  echo "remote_path=$dst"
+  echo "local_sha256=$local_sha"
+  echo "remote_sha256=$remote_sha"
+  echo "size=$size"
+  echo "scp_flags=$scp_flags"
+  echo "policy=$PIDD_POLICY_VERSION"
+  echo "host_run=no"
+  return 0
+}
+
+breakglass_status(){
+  in="$1"
+  [ -n "$in" ] || { echo "breakglass_status=FAIL missing_file"; return 1; }
+  case "$in" in /*) file="$in" ;; *) file="$DROP_DISPATCH_SCAN_DIR/$in" ;; esac
+  base=$($BASENAME_BIN "$file")
+  echo "breakglass_status_file=$file"
+  echo "breakglass_status_base=$base"
+  echo "--- breakglass log"
+  $GREP_BIN -F "$base" "$BREAKGLASS_LOG" 2>/dev/null | $TAIL_BIN -n 80 || true
+  echo "--- dispatch log"
+  $GREP_BIN -F "$base" "$LOG_FILE" 2>/dev/null | $TAIL_BIN -n 80 || true
+}
+
+breakglass_log_tail(){
+  n="${1:-160}"
+  case "$n" in ""|*[!0-9]*) n=160 ;; esac
+  [ "$n" -lt 20 ] 2>/dev/null && n=20
+  [ "$n" -gt 500 ] 2>/dev/null && n=500
+  echo "== breakglass log tail =="
+  echo "lines=$n"
+  if [ -f "$BREAKGLASS_LOG" ]; then
+    if [ -x "$TAIL_BIN" ]; then "$TAIL_BIN" -n "$n" "$BREAKGLASS_LOG"; else $CAT_BIN "$BREAKGLASS_LOG"; fi
+  else
+    echo "breakglass_log_missing=$BREAKGLASS_LOG"
+  fi
+}
 
 remote_verify_basic(){
   host="$1"; dst="$2"; qdst=$(sq "$dst")
@@ -1184,6 +1316,16 @@ case "${1:-}" in
     wait_boot; import_bundle_if_needed; load_config || exit 1
     if [ -x "$TOOLS_DIR/pidd-migrate-config.sh" ]; then "$TOOLS_DIR/pidd-migrate-config.sh" --dry-run; else echo "migrate_tool=missing path=$TOOLS_DIR/pidd-migrate-config.sh"; exit 1; fi
     ;;
+  --breakglass-scp)
+    wait_boot; import_bundle_if_needed; load_config || exit 1; ensure_ssh_ready || exit 1; breakglass_scp "${2:-}" "${3:-}"
+    ;;
+  --breakglass-status)
+    wait_boot; import_bundle_if_needed; load_config || exit 1; breakglass_status "${2:-}"
+    ;;
+  --breakglass-log-tail)
+    wait_boot; import_bundle_if_needed; load_config || exit 1; breakglass_log_tail "${2:-160}"
+    ;;
+
   --requeue)
     wait_boot; import_bundle_if_needed; load_config || exit 1; requeue_file "${2:-}"
     ;;
