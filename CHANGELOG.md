@@ -1,3 +1,11 @@
+## 4.12.1-delivery-safety-rc2
+
+- Add explicit manual `--breakglass-scp <file> <target>` for controlled Direct-SCP fallback.
+- Add `--breakglass-status <file>` and `--breakglass-log-tail [lines]` evidence inspection.
+- Gate break-glass with strict target prefix, sidecar/partial blocking, target-specific space policy, remote SHA-256 verification and evidence logging.
+- Keep break-glass non-automatic and keep host execution out of scope.
+- Keep Sortify marker policy `v4115` unchanged.
+- Keep `update.json` on stable `4.12.0` during rc2 validation.
 
 ## 4.12.1-delivery-safety-rc1
 

@@ -264,3 +264,15 @@ The v4.12.1 candidate adds target-specific delivery safety checks and on-device 
 - Remote free-space gates before upload.
 - BerylAX-specific defaults: 50 MiB minimum free space, 100 MiB warning, 20 MiB max artifact size.
 - Sortify marker policy remains `v4115`.
+
+### v4.12.1 rc2 break-glass Direct-SCP
+
+The rc2 candidate adds an explicit operator-only fallback command:
+
+```text
+service.sh --breakglass-scp <file> <target>
+service.sh --breakglass-status <file>
+service.sh --breakglass-log-tail [lines]
+```
+
+Break-glass is never automatic. It requires a valid target prefix, target-specific space policy PASS, remote SHA-256 match and evidence in `/data/adb/ssh-drop-dispatcher/breakglass.log`. Host execution remains a separate gated step.
