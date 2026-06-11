@@ -1,3 +1,9 @@
+## v4.12.1-delivery-safety-rc4 - space probe retry candidate
+
+- Hardened delivery space probes with bounded retry logging before declaring `space unreadable`.
+- Preserves rc3 delivery-status/wait remote-first recovery and optional private ntfy notifications.
+- No DNS, HA, VIP, route, Sortify marker policy or host-run changes.
+
 ## 4.12.1-delivery-safety-rc3
 
 - Add `--delivery-status <file>` for remote-first delivery verification when the local source is already missing.

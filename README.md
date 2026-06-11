@@ -1,6 +1,12 @@
 <!-- SDD_V4120_WEBUI_CONTROL_START -->
 ## SSH Drop Dispatcher 4.12.0-webui-control-rc1 - WebUI control candidate
 
+### v4.12.1-delivery-safety-rc4 candidate
+
+The rc4 candidate keeps rc3 delivery-status/wait and optional private ntfy delivery notifications, then hardens BerylAX-style transient `df`/space probe failures with bounded retries before a delivery is failed as `space unreadable`.
+
+Safety invariants remain unchanged: no host-run action, no DNS/HA/VIP/route changes, no Sortify marker policy change, and no bundled ntfy secrets.
+
 This vNext candidate adds a small public control surface for day-to-day operation:
 
 - Enable/disable dispatcher from WebUI using `DROP_DISPATCH_ENABLED=0|1`.
