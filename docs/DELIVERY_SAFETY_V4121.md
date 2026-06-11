@@ -60,3 +60,27 @@ Rules:
 - Remote SHA-256 must match local SHA-256.
 - Evidence is appended to `/data/adb/ssh-drop-dispatcher/breakglass.log`.
 - Host execution is not part of break-glass and remains a separate verify/run gate.
+
+## rc3 delivery status/wait addendum
+
+Portal v1.6.5 delivery anomaly handling requires a remote-first PASS path: if the local source is missing later, but dispatcher state shows done/complete and each target remote drop contains the file, orchestrators must continue instead of failing on the missing local file.
+
+New commands:
+
+```text
+service.sh --delivery-status <file>
+service.sh --wait-delivery <file> [timeout_seconds] [interval_seconds]
+```
+
+Expected recovery PASS shape:
+
+```text
+local_exists=no
+dispatch_complete=yes
+remote_all=yes
+final_gate=PASS
+recovery_mode=remote_first
+host_run=no
+```
+
+This does not alter the Sortify marker policy (`v4115`), remote drop paths, DNS, HA, VIP, or routes. Optional ntfy notifications are private-runtime-only, disabled by default, and report per-target PASS/FAIL delivery outcomes without bundling secrets.

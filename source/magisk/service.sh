@@ -217,6 +217,12 @@ create_default_config_if_missing(){
     echo "DROP_DISPATCH_WATCHDOG_SECONDS=60"
     echo "SSH_BIN=$SSH_BIN_DEFAULT"
     echo "SCP_BIN=$SCP_BIN_DEFAULT"
+    echo "NTFY_ENABLED=0"
+    echo "NTFY_URL="
+    echo "NTFY_TOPIC="
+    echo "NTFY_PRIORITY=default"
+    echo "NTFY_TAGS=package"
+    echo "NTFY_TOKEN_FILE="
     echo "REMOTE_MIN_FREE_KB_pi3=3145728"
     echo "REMOTE_MIN_FREE_KB_pi4=3145728"
     echo "REMOTE_MIN_FREE_KB_zeropi2=524288"
@@ -305,6 +311,12 @@ load_config(){
   [ -x "$SCP_BIN" ] || SCP_BIN=$(dirname "$SSH_BIN")/scp
   [ -x "$SCP_BIN" ] || SCP_BIN="$SCP_BIN_DEFAULT"
   BASH_BIN=${BASH_BIN:-$BASH_BIN_DEFAULT}
+  NTFY_ENABLED=${NTFY_ENABLED:-0}
+  NTFY_URL=${NTFY_URL:-}
+  NTFY_TOPIC=${NTFY_TOPIC:-}
+  NTFY_PRIORITY=${NTFY_PRIORITY:-default}
+  NTFY_TAGS=${NTFY_TAGS:-package}
+  NTFY_TOKEN_FILE=${NTFY_TOKEN_FILE:-}
   REMOTE_MIN_FREE_KB_pi3=${REMOTE_MIN_FREE_KB_pi3:-3145728}
   REMOTE_MIN_FREE_KB_pi4=${REMOTE_MIN_FREE_KB_pi4:-3145728}
   REMOTE_MIN_FREE_KB_zeropi2=${REMOTE_MIN_FREE_KB_zeropi2:-524288}
@@ -495,7 +507,7 @@ target_shell(){ eval "v=\"\${SHELL_$1:-bash}\""; printf '%s' "$v"; }
 target_verify(){ eval "v=\"\${VERIFY_$1:-}\""; printf '%s' "$v"; }
 target_scp_flags(){ eval "v=\"\${SCP_FLAGS_$1:-}\""; printf '%s' "$v"; }
 
-# v4.12.1 delivery-safety helpers: target-specific space gates, diagnostics and break-glass SCP.
+# v4.12.1 delivery-safety helpers: target-specific space gates, diagnostics, ntfy notifications, break-glass SCP and delivery wait/status.
 target_min_free_kb(){
   case "$1" in
     pi3|pi4) printf "%s" "${REMOTE_MIN_FREE_KB_pi4:-3145728}" ;;
@@ -688,6 +700,9 @@ breakglass_fail(){
   file="${2:-}"
   target="${3:-}"
   log "BREAKGLASS_FAIL reason=$reason file=$file target=$target host_run=no policy=$PIDD_POLICY_VERSION"
+  bgbase="$file"
+  case "$bgbase" in */*) bgbase=$($BASENAME_BIN "$bgbase" 2>/dev/null || echo "$file") ;; esac
+  notify_delivery FAIL "$target" "$bgbase" "breakglass_$reason"
   echo "breakglass_scp=FAIL"
   echo "reason=$reason"
   echo "file=$file"
@@ -771,6 +786,7 @@ breakglass_scp(){
   [ "$remote_sha" = "$local_sha" ] || { echo "local_sha256=$local_sha"; echo "remote_sha256=$remote_sha"; breakglass_fail remote_sha_mismatch "$file" "$target"; return 1; }
 
   breakglass_evidence "$file" "$base" "$target" "$host" "$dst" "$local_sha" "$remote_sha" "$size" "$scp_flags"
+  notify_delivery PASS "$target" "$base" breakglass
   echo "breakglass_scp=PASS"
   echo "file=$file"
   echo "base=$base"
@@ -811,6 +827,253 @@ breakglass_log_tail(){
   else
     echo "breakglass_log_missing=$BREAKGLASS_LOG"
   fi
+}
+
+# v4.12.1 rc3 notification + handover helpers: ntfy delivery events, remote-first delivery status and wait diagnostics.
+notify_enabled(){
+  case "${NTFY_ENABLED:-0}" in 1|yes|YES|true|TRUE|on|ON) return 0 ;; *) return 1 ;; esac
+}
+
+ntfy_endpoint(){
+  if [ -n "${NTFY_URL:-}" ]; then
+    printf "%s" "$NTFY_URL"
+    return 0
+  fi
+  if [ -n "${NTFY_TOPIC:-}" ]; then
+    case "$NTFY_TOPIC" in http://*|https://*) printf "%s" "$NTFY_TOPIC" ;; *) printf "https://ntfy.sh/%s" "$NTFY_TOPIC" ;; esac
+    return 0
+  fi
+  return 1
+}
+
+notify_delivery(){
+  status="$1"
+  target="${2:-unknown}"
+  base="${3:-unknown}"
+  reason="${4:-}"
+  notify_enabled || return 0
+  url=$(ntfy_endpoint 2>/dev/null || true)
+  [ -n "$url" ] || { log "NTFY_SKIP missing_endpoint status=$status target=$target file=$base"; return 0; }
+  curl_bin="${CURL_BIN:-}"
+  [ -x "$curl_bin" ] || curl_bin=/data/data/com.termux/files/usr/bin/curl
+  [ -x "$curl_bin" ] || curl_bin=/system/bin/curl
+  [ -x "$curl_bin" ] || { log "NTFY_SKIP curl_missing status=$status target=$target file=$base"; return 0; }
+  title="SDD $status target=$target"
+  tags="${NTFY_TAGS:-package}"
+  priority="${NTFY_PRIORITY:-default}"
+  body="file=$base target=$target status=$status reason=$reason host_run=no policy=$PIDD_POLICY_VERSION"
+  auth_args=""
+  if [ -n "${NTFY_TOKEN_FILE:-}" ] && [ -f "$NTFY_TOKEN_FILE" ]; then
+    token=$($CAT_BIN "$NTFY_TOKEN_FILE" 2>/dev/null | $TR_BIN -d "\r\n" 2>/dev/null)
+    [ -n "$token" ] && auth_args="-H Authorization: Bearer $token"
+  fi
+  if [ -n "$auth_args" ]; then
+    $curl_bin -fsS -m 8 -H "Title: $title" -H "Priority: $priority" -H "Tags: $tags" -H "Authorization: Bearer $token" -d "$body" "$url" >/dev/null 2>&1 \
+      && log "NTFY_SENT status=$status target=$target file=$base reason=$reason" \
+      || log "NTFY_FAIL status=$status target=$target file=$base reason=$reason"
+  else
+    $curl_bin -fsS -m 8 -H "Title: $title" -H "Priority: $priority" -H "Tags: $tags" -d "$body" "$url" >/dev/null 2>&1 \
+      && log "NTFY_SENT status=$status target=$target file=$base reason=$reason" \
+      || log "NTFY_FAIL status=$status target=$target file=$base reason=$reason"
+  fi
+  return 0
+}
+
+# v4.12.1 rc3 handover helpers: remote-first delivery status and wait diagnostics.
+state_has_base(){
+  db="$1"; base="$2"
+  [ -f "$db" ] || return 1
+  $GREP_BIN -F "$base|" "$db" >/dev/null 2>&1
+}
+
+state_has_base_target(){
+  db="$1"; base="$2"; target="$3"
+  [ -f "$db" ] || return 1
+  $GREP_BIN -F "$base|" "$db" 2>/dev/null | $GREP_BIN -F "|target=$target" >/dev/null 2>&1
+}
+
+sortify_marker_for_base(){
+  base="$1"
+  [ -d "$SORTIFY_RELEASE_DIR" ] || return 1
+  $GREP_BIN -R -F "$base" "$SORTIFY_RELEASE_DIR" >/dev/null 2>&1
+}
+
+remote_file_exists(){
+  target="$1"; base="$2"
+  host=$(target_host "$target")
+  dir=$(target_dir "$target")
+  dst="$dir/$base"
+  qdst=$(sq "$dst")
+  "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=10 "$host" "sh -c 'test -s $qdst'" >/dev/null 2>&1
+}
+
+remote_file_digest(){
+  target="$1"; base="$2"
+  host=$(target_host "$target")
+  dir=$(target_dir "$target")
+  dst="$dir/$base"
+  qdst=$(sq "$dst")
+  "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=10 "$host" "sh -c 'if command -v sha256sum >/dev/null 2>&1; then sha256sum $qdst 2>/dev/null | awk \"{print \\\$1}\"; else cksum $qdst 2>/dev/null | awk \"{print \\\$1\"-\"\\\$2}\"; fi'" 2>/dev/null | $GREP_BIN -E '^[0-9a-fA-F]{64}$|^[0-9]+-[0-9]+$' | $TAIL_BIN -n 1
+}
+
+delivery_status(){
+  in="$1"
+  [ -n "$in" ] || { echo "delivery_status=FAIL missing_file"; echo "host_run=no"; return 1; }
+  case "$in" in /*) file="$in" ;; *) file="$DROP_DISPATCH_SCAN_DIR/$in" ;; esac
+  base=$($BASENAME_BIN "$file")
+  lower=$(lower_name "$base")
+
+  echo "delivery_status_file=$file"
+  echo "delivery_status_base=$base"
+  echo "host_run=no"
+  [ -f "$file" ] && local_exists=yes || local_exists=no
+  echo "local_exists=$local_exists"
+  is_partial "$base" && partial=yes || partial=no
+  is_sidecar "$base" && sidecar=yes || sidecar=no
+  is_supported "$base" && supported=yes || supported=no
+  strict_target_prefix && strict=yes || strict=no
+  echo "partial=$partial"
+  echo "sidecar=$sidecar"
+  echo "supported=$supported"
+  echo "strict_target_prefix=$strict"
+
+  mt=$(marker_targets_for "$lower" 2>/dev/null || true)
+  if [ -n "$mt" ]; then
+    echo "route_reason=target_prefix"
+    echo "marker_targets=$mt"
+  else
+    echo "route_reason=strict_no_valid_prefix"
+    echo "marker_targets="
+  fi
+  targets=$(targets_for "$base")
+  echo "targets=$targets"
+  [ -n "$targets" ] || { echo "final_gate=FAIL"; echo "recovery_mode=no_targets"; return 1; }
+
+  if [ "$local_exists" = "yes" ]; then
+    rec=$(record "$file")
+    echo "rec=$rec"
+  else
+    rec=""
+    echo "rec=unavailable_local_missing"
+  fi
+
+  if state_has_base "$COMPLETE_DB" "$base"; then complete=yes; else complete=no; fi
+  if sortify_marker_for_base "$base"; then sortify_marker=yes; else sortify_marker=no; fi
+  echo "dispatch_complete=$complete"
+  echo "sortify_marker=$sortify_marker"
+
+  done_all=yes
+  remote_all=yes
+  done_targets=""
+  remote_targets=""
+  missing_targets=""
+  for t in $targets; do
+    if state_has_base_target "$DONE_FILE" "$base" "$t"; then
+      eval "done_${t}=yes"
+      done_targets="$done_targets $t"
+    else
+      eval "done_${t}=no"
+      done_all=no
+    fi
+    eval "echo dispatch_done_${t}=\$done_${t}"
+
+    if remote_file_exists "$t" "$base"; then
+      eval "remote_${t}_exists=yes"
+      remote_targets="$remote_targets $t"
+      digest=$(remote_file_digest "$t" "$base" || true)
+      [ -n "$digest" ] || digest=unknown
+      eval "remote_${t}_digest=\$digest"
+    else
+      eval "remote_${t}_exists=no"
+      remote_all=no
+      missing_targets="$missing_targets $t"
+      digest=missing
+      eval "remote_${t}_digest=missing"
+    fi
+    eval "echo remote_${t}_exists=\$remote_${t}_exists"
+    eval "echo remote_${t}_digest=\$remote_${t}_digest"
+  done
+  echo "done_targets=$done_targets"
+  echo "remote_targets=$remote_targets"
+  echo "missing_targets=$missing_targets"
+  echo "dispatch_done_all=$done_all"
+  echo "remote_all=$remote_all"
+
+  echo "--- state references"
+  for db in dispatch.done dispatch.complete dispatch.quarantined dispatch.faildb dispatch.inflight; do
+    echo "--- $db"
+    $GREP_BIN -F "$base|" "$STATE_DIR/$db" 2>/dev/null || true
+  done
+  echo "--- sortify marker references"
+  [ -d "$SORTIFY_RELEASE_DIR" ] && $GREP_BIN -R -F "$base" "$SORTIFY_RELEASE_DIR" 2>/dev/null | $TAIL_BIN -n 20 || true
+  echo "--- dispatch log tail"
+  $GREP_BIN -F "$base" "$LOG_FILE" 2>/dev/null | $TAIL_BIN -n 80 || true
+
+  if [ "$remote_all" = "yes" ] && { [ "$complete" = "yes" ] || [ "$done_all" = "yes" ]; }; then
+    echo "final_gate=PASS"
+    if [ "$local_exists" = "no" ]; then
+      echo "recovery_mode=remote_first"
+    else
+      echo "recovery_mode=local_source_confirmed"
+    fi
+    return 0
+  fi
+  echo "final_gate=FAIL"
+  if [ "$local_exists" = "no" ]; then
+    echo "recovery_mode=local_missing_incomplete"
+  else
+    echo "recovery_mode=local_source_waiting"
+  fi
+  return 1
+}
+
+wait_delivery(){
+  in="$1"
+  timeout="${2:-300}"
+  interval="${3:-5}"
+  case "$timeout" in ""|*[!0-9]*) timeout=300 ;; esac
+  case "$interval" in ""|*[!0-9]*) interval=5 ;; esac
+  [ "$timeout" -lt 10 ] 2>/dev/null && timeout=10
+  [ "$timeout" -gt 3600 ] 2>/dev/null && timeout=3600
+  [ "$interval" -lt 2 ] 2>/dev/null && interval=2
+  [ "$interval" -gt 60 ] 2>/dev/null && interval=60
+  start=$($DATE_BIN +%s 2>/dev/null || echo 0)
+  poll=1
+  tmp="$STATE_DIR/wait-delivery.$$.status"
+  echo "wait_delivery_file=$in"
+  echo "timeout_seconds=$timeout"
+  echo "interval_seconds=$interval"
+  echo "host_run=no"
+  while :; do
+    now=$($DATE_BIN +%s 2>/dev/null || echo 0)
+    elapsed=$((now - start))
+    [ "$elapsed" -lt 0 ] && elapsed=0
+    echo "== wait_delivery poll=$poll elapsed=$elapsed timeout=$timeout =="
+    echo "phase=delivery_status"
+    set +e
+    delivery_status "$in" > "$tmp" 2>&1
+    st=$?
+    set -e
+    $CAT_BIN "$tmp" 2>/dev/null || true
+    if [ "$st" = "0" ]; then
+      $RM_BIN -f "$tmp" >/dev/null 2>&1 || true
+      echo "wait_delivery=PASS"
+      echo "final_gate=PASS"
+      echo "RESULT: SDD_WAIT_DELIVERY_DONE"
+      return 0
+    fi
+    if [ "$elapsed" -ge "$timeout" ]; then
+      break
+    fi
+    echo "phase=sleep interval=$interval"
+    $SLEEP_BIN "$interval"
+    poll=$((poll + 1))
+  done
+  $RM_BIN -f "$tmp" >/dev/null 2>&1 || true
+  echo "wait_delivery=FAIL"
+  echo "final_gate=FAIL"
+  echo "RESULT: SDD_WAIT_DELIVERY_TIMEOUT"
+  return 1
 }
 
 remote_verify_basic(){
@@ -902,22 +1165,23 @@ process_file(){
     qtmp=$(sq "$tmp")
     qdst=$(sq "$dst")
 
-    delivery_space_gate "$t" "$host" "$dir" "$file" "$base" || { clear_inflight "$rec" "$t"; continue; }
-    "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=8 "$host" "sh -c 'mkdir -p $qdir'" >/dev/null 2>&1 || { log "FAIL mkdir file=$base target=$t host=$host"; clear_inflight "$rec" "$t"; continue; }
+    delivery_space_gate "$t" "$host" "$dir" "$file" "$base" || { notify_delivery FAIL "$t" "$base" space_policy; clear_inflight "$rec" "$t"; continue; }
+    "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=8 "$host" "sh -c 'mkdir -p $qdir'" >/dev/null 2>&1 || { log "FAIL mkdir file=$base target=$t host=$host"; notify_delivery FAIL "$t" "$base" mkdir; clear_inflight "$rec" "$t"; continue; }
     scp_flags=$(target_scp_flags "$t")
-    "$SCP_BIN" $scp_flags -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=12 "$file" "$host:$tmp" >/dev/null 2>&1 || { log "FAIL scp file=$base target=$t host=$host scp_flags=$(sq "$scp_flags")"; clear_inflight "$rec" "$t"; continue; }
-    "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=8 "$host" "sh -c 'mv -f $qtmp $qdst'" >/dev/null 2>&1 || { log "FAIL rename file=$base target=$t host=$host"; clear_inflight "$rec" "$t"; continue; }
+    "$SCP_BIN" $scp_flags -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=12 "$file" "$host:$tmp" >/dev/null 2>&1 || { log "FAIL scp file=$base target=$t host=$host scp_flags=$(sq "$scp_flags")"; notify_delivery FAIL "$t" "$base" scp; clear_inflight "$rec" "$t"; continue; }
+    "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=8 "$host" "sh -c 'mv -f $qtmp $qdst'" >/dev/null 2>&1 || { log "FAIL rename file=$base target=$t host=$host"; notify_delivery FAIL "$t" "$base" rename; clear_inflight "$rec" "$t"; continue; }
 
     if is_shell "$base"; then
       "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=8 "$host" "sh -c 'chmod 755 $qdst'" >/dev/null 2>&1 || true
-      remote_verify_script "$t" "$host" "$dst" || { log "FAIL verify file=$base target=$t host=$host"; add_quarantine "$rec" "$t" verify; clear_inflight "$rec" "$t"; continue; }
+      remote_verify_script "$t" "$host" "$dst" || { log "FAIL verify file=$base target=$t host=$host"; notify_delivery FAIL "$t" "$base" verify; add_quarantine "$rec" "$t" verify; clear_inflight "$rec" "$t"; continue; }
     else
-      remote_verify_basic "$host" "$dst" || { log "FAIL basic_verify file=$base target=$t host=$host"; clear_inflight "$rec" "$t"; continue; }
+      remote_verify_basic "$host" "$dst" || { log "FAIL basic_verify file=$base target=$t host=$host"; notify_delivery FAIL "$t" "$base" basic_verify; clear_inflight "$rec" "$t"; continue; }
     fi
 
     record_done "$rec" "$t"
     clear_inflight "$rec" "$t"
     log "OK upload file=$base target=$t host=$host"
+    notify_delivery PASS "$t" "$base" delivered
   done
 
   all_done=1
@@ -1111,6 +1375,10 @@ webui_status(){
   if dispatcher_enabled; then health OK webui_status; else health WARN disabled; fi
   $CAT_BIN "$HEALTH_FILE" 2>/dev/null || true
   echo
+  echo "== ntfy delivery notifications =="
+  echo "ntfy_enabled=${NTFY_ENABLED:-0}"
+  [ -n "${NTFY_URL:-}${NTFY_TOPIC:-}" ] && echo "ntfy_endpoint_configured=yes" || echo "ntfy_endpoint_configured=no"
+  echo "ntfy_token_file_configured=$([ -n "${NTFY_TOKEN_FILE:-}" ] && echo yes || echo no)"
   echo "== tools =="
   for x in dispatch-config.sh pidd-config.sh pidd-doctor.sh pidd-health.sh pidd-migrate-config.sh; do
     [ -x "$TOOLS_DIR/$x" ] && echo "$x=ok" || echo "$x=missing"
@@ -1324,6 +1592,14 @@ case "${1:-}" in
     ;;
   --breakglass-log-tail)
     wait_boot; import_bundle_if_needed; load_config || exit 1; breakglass_log_tail "${2:-160}"
+    ;;
+
+
+  --delivery-status)
+    wait_boot; import_bundle_if_needed; load_config || exit 1; ensure_ssh_ready || exit 1; delivery_status "${2:-}"
+    ;;
+  --wait-delivery)
+    wait_boot; import_bundle_if_needed; load_config || exit 1; ensure_ssh_ready || exit 1; wait_delivery "${2:-}" "${3:-300}" "${4:-5}"
     ;;
 
   --requeue)

@@ -1,3 +1,12 @@
+## 4.12.1-delivery-safety-rc3
+
+- Add `--delivery-status <file>` for remote-first delivery verification when the local source is already missing.
+- Add `--wait-delivery <file> [timeout] [interval]` with heartbeat output for orchestrator/cgrun waits.
+- Add optional ntfy delivery notifications for per-target PASS/FAIL events; disabled by default and configured only through private runtime config.
+- Treat `local_missing + dispatcher done/complete + remote target exists` as a recoverable PASS state.
+- Keep break-glass SCP, target-specific space gates, BerylAX `scp_flags=-O`, and Sortify marker policy `v4115` unchanged.
+- No DNS, HA, VIP, route, host drop-path, or automatic host-run changes.
+
 ## 4.12.1-delivery-safety-rc2
 
 - Add explicit manual `--breakglass-scp <file> <target>` for controlled Direct-SCP fallback.
