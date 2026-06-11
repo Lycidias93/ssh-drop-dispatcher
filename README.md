@@ -276,3 +276,20 @@ service.sh --breakglass-log-tail [lines]
 ```
 
 Break-glass is never automatic. It requires a valid target prefix, target-specific space policy PASS, remote SHA-256 match and evidence in `/data/adb/ssh-drop-dispatcher/breakglass.log`. Host execution remains a separate gated step.
+
+## v4.12.1 rc3 delivery status/wait diagnostics
+
+The rc3 candidate adds remote-first delivery diagnostics and optional ntfy delivery notifications for orchestrators that need to continue after the local Download source has already disappeared but dispatcher state and remote drops prove delivery completion.
+
+Commands:
+
+```text
+service.sh --delivery-status <file>
+service.sh --wait-delivery <file> [timeout_seconds] [interval_seconds]
+```
+
+`--delivery-status` reports local existence, route targets, dispatcher done/complete records, Sortify marker references, remote target existence/digests, `recovery_mode`, `final_gate`, and `host_run=no`.
+
+`--wait-delivery` repeats that status with heartbeat output until `final_gate=PASS` or timeout. It does not execute remote host payloads and does not change DNS, HA, VIP, routes, or target drop paths.
+
+Optional ntfy notifications are disabled by default and configured only through private runtime config: `NTFY_ENABLED=1` plus `NTFY_URL` or `NTFY_TOPIC`; optional `NTFY_TOKEN_FILE` may point at a local private token file. Notifications are emitted per target for `PASS` or `FAIL` delivery events and include `host_run=no`.

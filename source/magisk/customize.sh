@@ -10,10 +10,10 @@ TERMUX_CMD=$TERMUX_BIN/dispatch-config
 RUNTIME_BIN=$STATE_DIR/bin
 RUNTIME_CMD=$RUNTIME_BIN/dispatch-config
 
-ui_print "SSH Drop Dispatcher 4.12.1-delivery-safety-rc2"
+ui_print "SSH Drop Dispatcher 4.12.1-delivery-safety-rc3"
 ui_print "Runtime SoT: $STATE_DIR"
 ui_print "Author: Lycidias93
-Delivery safety target checks + break-glass SCP + Sortify marker contract: rc2
+Delivery safety target checks + break-glass SCP + delivery status/wait + ntfy notifications + Sortify marker contract: rc3
 Prompt-safe private runtime export: final"
 ui_print "Public defaults only: no bundled private targets or keys"
 ui_print "Command: dispatch-config"
