@@ -84,3 +84,9 @@ host_run=no
 ```
 
 This does not alter the Sortify marker policy (`v4115`), remote drop paths, DNS, HA, VIP, or routes. Optional ntfy notifications are private-runtime-only, disabled by default, and report per-target PASS/FAIL delivery outcomes without bundling secrets.
+
+## v4.12.1-delivery-safety-rc4 candidate
+
+rc4 hardens the delivery space probe path used by normal delivery and break-glass SCP. A target now gets bounded `remote_available_kb` retries and `WARN space_probe_retry` log lines before `FAIL space unreadable` is emitted.
+
+This specifically protects BerylAX-style transient `df`/SSH space-probe misses while preserving the target-specific free-space policy and max-artifact gates.

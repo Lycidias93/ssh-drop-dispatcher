@@ -232,6 +232,8 @@ create_default_config_if_missing(){
     echo "REMOTE_WARN_FREE_KB_zeropi2=1048576"
     echo "REMOTE_WARN_FREE_KB_berylax=102400"
     echo "REMOTE_MAX_ARTIFACT_KB_berylax=20480"
+    echo "REMOTE_SPACE_PROBE_RETRIES=3"
+    echo "REMOTE_SPACE_PROBE_RETRY_SLEEP=1"
     echo "HOST_alpha=alpha"
     echo "HOST_beta=beta"
     echo "HOST_edge=edge"
@@ -326,6 +328,8 @@ load_config(){
   REMOTE_WARN_FREE_KB_zeropi2=${REMOTE_WARN_FREE_KB_zeropi2:-1048576}
   REMOTE_WARN_FREE_KB_berylax=${REMOTE_WARN_FREE_KB_berylax:-102400}
   REMOTE_MAX_ARTIFACT_KB_berylax=${REMOTE_MAX_ARTIFACT_KB_berylax:-20480}
+  REMOTE_SPACE_PROBE_RETRIES=${REMOTE_SPACE_PROBE_RETRIES:-3}
+  REMOTE_SPACE_PROBE_RETRY_SLEEP=${REMOTE_SPACE_PROBE_RETRY_SLEEP:-1}
   HOST_alpha=${HOST_alpha:-alpha}
   HOST_beta=${HOST_beta:-beta}
   HOST_edge=${HOST_edge:-edge}
@@ -544,9 +548,32 @@ file_size_kb(){
   printf "%s" $(((bytes + 1023) / 1024))
 }
 
-remote_available_kb(){
+remote_available_kb_once(){
   host="$1"; dir="$2"; qdir=$(sq "$dir")
-  "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=10 "$host" "sh -c 'df -P -k $qdir 2>/dev/null | awk \"NR==2{print \\\$4}\"'" 2>/dev/null | $GREP_BIN -E "^[0-9]+$" | $TAIL_BIN -n 1
+  "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=10 "$host" "sh -c 'df -P -k $qdir 2>/dev/null | awk "NR==2{print \\$4}"'" 2>/dev/null | $GREP_BIN -E "^[0-9]+$" | $TAIL_BIN -n 1
+}
+
+remote_available_kb(){
+  host="$1"; dir="$2"; target="${3:-unknown}"; base="${4:-unknown}"
+  max_attempts=$(to_int_or_zero "${REMOTE_SPACE_PROBE_RETRIES:-3}")
+  retry_sleep=$(to_int_or_zero "${REMOTE_SPACE_PROBE_RETRY_SLEEP:-1}")
+  [ "$max_attempts" -lt 1 ] 2>/dev/null && max_attempts=1
+  [ "$max_attempts" -gt 5 ] 2>/dev/null && max_attempts=5
+  [ "$retry_sleep" -gt 10 ] 2>/dev/null && retry_sleep=10
+  attempt=1
+  while [ "$attempt" -le "$max_attempts" ]; do
+    avail=$(remote_available_kb_once "$host" "$dir" 2>/dev/null || true)
+    if [ -n "$avail" ]; then
+      printf "%s" "$avail"
+      return 0
+    fi
+    log "WARN space_probe_retry target=$target host=$host dir=$dir file=$base attempt=$attempt max=$max_attempts"
+    if [ "$attempt" -lt "$max_attempts" ] && [ "$retry_sleep" -gt 0 ]; then
+      $SLEEP_BIN "$retry_sleep"
+    fi
+    attempt=$((attempt + 1))
+  done
+  return 1
 }
 
 remote_inode_available(){
@@ -565,7 +592,7 @@ delivery_space_gate(){
   warn_kb=$(to_int_or_zero "$(target_warn_free_kb "$target")")
   max_kb=$(to_int_or_zero "$(target_max_artifact_kb "$target")")
   art_kb=$(file_size_kb "$file")
-  avail_kb=$(remote_available_kb "$host" "$dir")
+  avail_kb=$(remote_available_kb "$host" "$dir" "$target" "$base")
   avail_kb=$(to_int_or_zero "$avail_kb")
   required_kb=$((min_kb + art_kb))
 
@@ -624,7 +651,7 @@ verify_target_one(){
     return 1
   fi
 
-  avail=$(remote_available_kb "$host" "$dir")
+  avail=$(remote_available_kb "$host" "$dir" "$t" verify-target)
   avail=$(to_int_or_zero "$avail")
   inodes=$(remote_inode_available "$host" "$dir")
   inodes=$(to_int_or_zero "$inodes")
@@ -829,7 +856,7 @@ breakglass_log_tail(){
   fi
 }
 
-# v4.12.1 rc3 notification + handover helpers: ntfy delivery events, remote-first delivery status and wait diagnostics.
+# v4.12.1 rc4 notification + handover helpers: ntfy delivery events, remote-first delivery status and wait diagnostics.
 notify_enabled(){
   case "${NTFY_ENABLED:-0}" in 1|yes|YES|true|TRUE|on|ON) return 0 ;; *) return 1 ;; esac
 }
@@ -879,7 +906,7 @@ notify_delivery(){
   return 0
 }
 
-# v4.12.1 rc3 handover helpers: remote-first delivery status and wait diagnostics.
+# v4.12.1 rc4 handover helpers: remote-first delivery status and wait diagnostics.
 state_has_base(){
   db="$1"; base="$2"
   [ -f "$db" ] || return 1
@@ -1408,6 +1435,8 @@ runtime_status(){
   echo "berylax_min_free_kb=${REMOTE_MIN_FREE_KB_berylax:-51200}"
   echo "berylax_warn_free_kb=${REMOTE_WARN_FREE_KB_berylax:-102400}"
   echo "berylax_max_artifact_kb=${REMOTE_MAX_ARTIFACT_KB_berylax:-20480}"
+  echo "space_probe_retries=${REMOTE_SPACE_PROBE_RETRIES:-3}"
+  echo "space_probe_retry_sleep=${REMOTE_SPACE_PROBE_RETRY_SLEEP:-1}"
   echo "== tools =="
   for x in dispatch-config.sh pidd-config.sh pidd-doctor.sh pidd-health.sh pidd-migrate-config.sh; do
     [ -x "$TOOLS_DIR/$x" ] && echo "$x=ok" || echo "$x=missing"
