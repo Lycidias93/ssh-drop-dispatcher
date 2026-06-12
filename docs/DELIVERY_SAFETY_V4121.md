@@ -90,3 +90,7 @@ This does not alter the Sortify marker policy (`v4115`), remote drop paths, DNS,
 rc4 hardens the delivery space probe path used by normal delivery and break-glass SCP. A target now gets bounded `remote_available_kb` retries and `WARN space_probe_retry` log lines before `FAIL space unreadable` is emitted.
 
 This specifically protects BerylAX-style transient `df`/SSH space-probe misses while preserving the target-specific free-space policy and max-artifact gates.
+
+## rc5 BerylAX/OpenWrt df parser hardening
+
+rc5 keeps the rc4 retry gate but changes the space and inode probes to parse remote df output locally after SSH. This avoids nested remote awk quoting failures while preserving target minimum-free-space gates and Sortify marker policy v4115.
