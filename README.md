@@ -299,3 +299,7 @@ service.sh --wait-delivery <file> [timeout_seconds] [interval_seconds]
 `--wait-delivery` repeats that status with heartbeat output until `final_gate=PASS` or timeout. It does not execute remote host payloads and does not change DNS, HA, VIP, routes, or target drop paths.
 
 Optional ntfy notifications are disabled by default and configured only through private runtime config: `NTFY_ENABLED=1` plus `NTFY_URL` or `NTFY_TOPIC`; optional `NTFY_TOKEN_FILE` may point at a local private token file. Notifications are emitted per target for `PASS` or `FAIL` delivery events and include `host_run=no`.
+
+### v4.12.1 delivery safety rc5
+
+rc5 fixes BerylAX/OpenWrt remote free-space parsing by collecting df output over SSH and parsing it locally. rc4 ntfy and delivery-status behavior remain unchanged.

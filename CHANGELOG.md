@@ -1,3 +1,8 @@
+## v4.12.1-delivery-safety-rc5 - 2026-06-12
+
+- Fix BerylAX/OpenWrt space probing by parsing remote df output locally after SSH instead of using nested remote awk quoting.
+- Keep rc4 ntfy, delivery status/wait, break-glass SCP, retry behavior, and Sortify marker policy v4115 unchanged.
+
 ## v4.12.1-delivery-safety-rc4 - space probe retry candidate
 
 - Hardened delivery space probes with bounded retry logging before declaring `space unreadable`.

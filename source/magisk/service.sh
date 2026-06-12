@@ -550,7 +550,21 @@ file_size_kb(){
 
 remote_available_kb_once(){
   host="$1"; dir="$2"; qdir=$(sq "$dir")
-  "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=10 "$host" "sh -c 'df -P -k $qdir 2>/dev/null | awk "NR==2{print \\$4}"'" 2>/dev/null | $GREP_BIN -E "^[0-9]+$" | $TAIL_BIN -n 1
+  out=$("$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=10 "$host" "df -P -k $qdir 2>/dev/null || df -k $qdir 2>/dev/null || busybox df -P -k $qdir 2>/dev/null || busybox df -k $qdir 2>/dev/null" 2>/dev/null || true)
+  parsed=$(
+    printf "%s\n" "$out" |
+    $SED_BIN "s/[[:space:]][[:space:]]*/ /g" |
+    while IFS=" " read -r fs blocks used avail rest; do
+      case "$blocks" in ""|*[!0-9]* ) continue ;; esac
+      case "$used" in ""|*[!0-9]* ) continue ;; esac
+      case "$avail" in ""|*[!0-9]* ) continue ;; esac
+      printf "%s\n" "$avail"
+      break
+    done |
+    $GREP_BIN -E "^[0-9]+$" |
+    $TAIL_BIN -n 1
+  )
+  [ -n "$parsed" ] && printf "%s" "$parsed"
 }
 
 remote_available_kb(){
@@ -578,7 +592,21 @@ remote_available_kb(){
 
 remote_inode_available(){
   host="$1"; dir="$2"; qdir=$(sq "$dir")
-  "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=10 "$host" "sh -c 'df -P -i $qdir 2>/dev/null | awk \"NR==2{print \\\$4}\"'" 2>/dev/null | $GREP_BIN -E "^[0-9]+$" | $TAIL_BIN -n 1
+  out=$("$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=10 "$host" "df -P -i $qdir 2>/dev/null || df -i $qdir 2>/dev/null || busybox df -P -i $qdir 2>/dev/null || busybox df -i $qdir 2>/dev/null" 2>/dev/null || true)
+  parsed=$(
+    printf "%s\n" "$out" |
+    $SED_BIN "s/[[:space:]][[:space:]]*/ /g" |
+    while IFS=" " read -r fs inodes used avail rest; do
+      case "$inodes" in ""|*[!0-9]* ) continue ;; esac
+      case "$used" in ""|*[!0-9]* ) continue ;; esac
+      case "$avail" in ""|*[!0-9]* ) continue ;; esac
+      printf "%s\n" "$avail"
+      break
+    done |
+    $GREP_BIN -E "^[0-9]+$" |
+    $TAIL_BIN -n 1
+  )
+  [ -n "$parsed" ] && printf "%s" "$parsed"
 }
 
 remote_drop_writable(){
