@@ -1,3 +1,8 @@
+## v4.12.1 - 2026-06-12
+
+- Promote delivery-safety rc5 to final v4.12.1 after post-reboot runtime smoke passed.
+- Verified BerylAX/OpenWrt df parser fix, pi4 and BerylAX break-glass SCP, ntfy PASS hooks, dispatcher health, and unchanged Sortify marker policy v4115.
+
 ## v4.12.1-delivery-safety-rc5 - 2026-06-12
 
 - Fix BerylAX/OpenWrt space probing by parsing remote df output locally after SSH instead of using nested remote awk quoting.

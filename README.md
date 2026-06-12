@@ -303,3 +303,7 @@ Optional ntfy notifications are disabled by default and configured only through 
 ### v4.12.1 delivery safety rc5
 
 rc5 fixes BerylAX/OpenWrt remote free-space parsing by collecting df output over SSH and parsing it locally. rc4 ntfy and delivery-status behavior remain unchanged.
+
+### v4.12.1 final
+
+Final v4.12.1 promotes the rc5 delivery-safety build after successful post-reboot smoke: BerylAX/OpenWrt space parser, break-glass SCP, delivery status/wait, ntfy PASS notifications, and Sortify marker policy v4115.
