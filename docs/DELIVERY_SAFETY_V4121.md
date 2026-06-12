@@ -94,3 +94,7 @@ This specifically protects BerylAX-style transient `df`/SSH space-probe misses w
 ## rc5 BerylAX/OpenWrt df parser hardening
 
 rc5 keeps the rc4 retry gate but changes the space and inode probes to parse remote df output locally after SSH. This avoids nested remote awk quoting failures while preserving target minimum-free-space gates and Sortify marker policy v4115.
+
+## v4.12.1 final verification
+
+Post-reboot smoke passed for rc5: BerylAX/OpenWrt df parser returns available space, pi4 and BerylAX break-glass SCP pass, ntfy PASS notifications are emitted, dispatcher health is OK, and Sortify marker policy remains v4115.
