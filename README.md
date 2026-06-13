@@ -319,3 +319,7 @@ Final v4.12.2 promotes the WebUI ntfy settings rc1 after runtime smoke: secret-s
 ### v4.12.3 ntfy format rc1
 
 Ntfy notifications now use a minimal traffic-light title and compact body: file, reason, policy, and host_run. `docs/NTFY_RUNBOOK.md` documents secret-safe checks, test push, expected format, and troubleshooting. No delivery logic or Sortify marker policy changes.
+
+### v4.12.3 final
+
+Final v4.12.3 promotes the ntfy notification format after smoke proof: 🟢 PASS title, compact body, BerylAX breakglass proof, ntfy log evidence, and unchanged Sortify marker policy v4115. See `docs/NTFY_RUNBOOK.md`.
