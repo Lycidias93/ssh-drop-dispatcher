@@ -51,3 +51,7 @@ Emoji: 🟢 PASS, 🟡 WARN/SKIP, 🔴 FAIL/ERROR, 🔵 INFO/TEST/other.
 ```sh
 su -c 'grep -E "NTFY_|BREAKGLASS|PASS space|FAIL space" /data/adb/ssh-drop-dispatcher/log/dispatch.log | tail -80'
 ```
+
+## Final v4.12.3 verification
+
+Runtime smoke passed with secret-safe status, ntfy test push, BerylAX verify, BerylAX breakglass proof, ntfy log evidence, runtime health OK, `host_run=no`, and Sortify marker policy `v4115` unchanged.

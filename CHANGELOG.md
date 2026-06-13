@@ -1,3 +1,9 @@
+## v4.12.3 - 2026-06-13
+
+- Promote ntfy notification format rc1 to final v4.12.3 after runtime smoke passed.
+- Final notification format uses minimal traffic-light status, concise target title, file line, reason, policy, and host_run status.
+- `docs/NTFY_RUNBOOK.md` is part of the release. Delivery behavior, WebUI ntfy settings, BerylAX parser, break-glass SCP, and Sortify marker policy v4115 remain unchanged.
+
 ## v4.12.3-ntfy-format-rc1 - 2026-06-13
 
 - Polish ntfy notification text with minimal traffic-light status emoji, concise title, file line, reason, policy, and host_run status.

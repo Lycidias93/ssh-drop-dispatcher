@@ -17,7 +17,7 @@ TERMUX_BIN=/data/data/com.termux/files/usr/bin
 TERMUX_CMD=$TERMUX_BIN/dispatch-config
 DEFAULT_SCAN_DIR=/storage/emulated/0/Download
 DEFAULT_REMOTE_DROP=/tmp/ssh-drop-dispatcher-drop
-VERSION=4.12.3-ntfy-format-rc1
+VERSION=4.12.3
 mkdir -p "$CONFIG_DIR" "$TARGET_DIR" "$SSH_DIR" "$BACKUP_DIR" "$RUNTIME_BIN" "$DOWNLOAD_DIR" >/dev/null 2>&1 || true
 
 ask(){
