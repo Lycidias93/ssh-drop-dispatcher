@@ -315,3 +315,7 @@ Secret-safe WebUI ntfy controls can set runtime config and send a test notificat
 ### v4.12.2 final
 
 Final v4.12.2 promotes the WebUI ntfy settings rc1 after runtime smoke: secret-safe status, ntfy config write, ntfy test notification, WebUI command hooks, runtime health OK, and unchanged Sortify marker policy v4115.
+
+### v4.12.3 ntfy format rc1
+
+Ntfy notifications now use a minimal traffic-light title and compact body: file, reason, policy, and host_run. `docs/NTFY_RUNBOOK.md` documents secret-safe checks, test push, expected format, and troubleshooting. No delivery logic or Sortify marker policy changes.

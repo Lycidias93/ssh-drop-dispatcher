@@ -913,10 +913,16 @@ notify_delivery(){
   [ -x "$curl_bin" ] || curl_bin=/data/data/com.termux/files/usr/bin/curl
   [ -x "$curl_bin" ] || curl_bin=/system/bin/curl
   [ -x "$curl_bin" ] || { log "NTFY_SKIP curl_missing status=$status target=$target file=$base"; return 0; }
-  title="SDD $status target=$target"
-  tags="${NTFY_TAGS:-package}"
+  case "$status" in
+    PASS) icon="🟢";;
+    FAIL|FAILED|ERROR) icon="🔴";;
+    WARN|WARNING|SKIP|SKIPPED) icon="🟡";;
+    *) icon="🔵";;
+  esac
+  title="$icon SDD $status · $target"
+  tags="${NTFY_TAGS:-traffic_light,package}"
   priority="${NTFY_PRIORITY:-default}"
-  body="file=$base target=$target status=$status reason=$reason host_run=no policy=$PIDD_POLICY_VERSION"
+  body="$(printf "%s\\nreason: %s\\npolicy: %s · host_run: no" "$base" "$reason" "$PIDD_POLICY_VERSION")"
   auth_args=""
   if [ -n "${NTFY_TOKEN_FILE:-}" ] && [ -f "$NTFY_TOKEN_FILE" ]; then
     token=$($CAT_BIN "$NTFY_TOKEN_FILE" 2>/dev/null | $TR_BIN -d "\r\n" 2>/dev/null)

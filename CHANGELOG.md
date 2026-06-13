@@ -1,3 +1,9 @@
+## v4.12.3-ntfy-format-rc1 - 2026-06-13
+
+- Polish ntfy notification text with minimal traffic-light status emoji, concise title, file line, reason, policy, and host_run status.
+- Add `docs/NTFY_RUNBOOK.md` with secret-safe status checks, test notification, message format, secret rules, and troubleshooting.
+- Delivery behavior, WebUI ntfy settings, BerylAX parser, break-glass SCP, and Sortify marker policy v4115 remain unchanged.
+
 ## v4.12.2 - 2026-06-13
 
 - Promote WebUI ntfy settings rc1 to final v4.12.2 after runtime smoke passed.
