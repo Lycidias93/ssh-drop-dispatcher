@@ -307,3 +307,7 @@ rc5 fixes BerylAX/OpenWrt remote free-space parsing by collecting df output over
 ### v4.12.1 final
 
 Final v4.12.1 promotes the rc5 delivery-safety build after successful post-reboot smoke: BerylAX/OpenWrt space parser, break-glass SCP, delivery status/wait, ntfy PASS notifications, and Sortify marker policy v4115.
+
+### v4.12.2 WebUI rc1
+
+Secret-safe WebUI ntfy controls can set runtime config and send a test notification. Token contents are never displayed; existing v4.12.1 delivery safety behavior and Sortify marker policy v4115 remain unchanged.

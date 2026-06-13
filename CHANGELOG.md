@@ -1,3 +1,8 @@
+## v4.12.2-webui-rc1 - 2026-06-13
+
+- Add secret-safe WebUI ntfy settings actions: set config, preserve token secrecy, backup config before changes, and send test notification.
+- Keep v4.12.1 final delivery safety, BerylAX parser, break-glass SCP, delivery status/wait, and Sortify marker policy v4115 unchanged.
+
 ## v4.12.1 - 2026-06-12
 
 - Promote delivery-safety rc5 to final v4.12.1 after post-reboot runtime smoke passed.

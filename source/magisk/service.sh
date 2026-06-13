@@ -1452,6 +1452,69 @@ webui_status(){
   done
 }
 
+webui_safe_ntfy_topic(){
+  v="$1"
+  [ -n "$v" ] || return 1
+  printf "%s" "$v" | $GREP_BIN -Eq '^[A-Za-z0-9._-]+$'
+}
+
+webui_safe_ntfy_url(){
+  v="$1"
+  [ -z "$v" ] && return 0
+  case "$v" in http://*|https://*) ;; *) return 1 ;; esac
+  printf "%s" "$v" | $GREP_BIN -Eq '^[A-Za-z0-9:/._?&=%+-]+$'
+}
+
+webui_safe_ntfy_word(){
+  v="$1"
+  [ -n "$v" ] || return 1
+  printf "%s" "$v" | $GREP_BIN -Eq '^[A-Za-z0-9,._-]+$'
+}
+
+webui_safe_ntfy_token_file(){
+  v="$1"
+  [ -z "$v" ] && return 0
+  case "$v" in /*) ;; *) return 1 ;; esac
+  printf "%s" "$v" | $GREP_BIN -Eq '^[A-Za-z0-9_./-]+$'
+}
+
+webui_ntfy_set(){
+  enabled="${1:-0}"
+  topic="${2:-}"
+  url="${3:-}"
+  priority="${4:-default}"
+  tags="${5:-package}"
+  token_file="${6:-}"
+  case "$enabled" in 1|yes|YES|true|TRUE|on|ON) enabled=1 ;; 0|no|NO|false|FALSE|off|OFF|"") enabled=0 ;; *) echo "ntfy_config_write=FAIL invalid_enabled"; return 2 ;; esac
+  if [ -n "$topic" ]; then webui_safe_ntfy_topic "$topic" || { echo "ntfy_config_write=FAIL invalid_topic"; return 2; }; fi
+  webui_safe_ntfy_url "$url" || { echo "ntfy_config_write=FAIL invalid_url"; return 2; }
+  webui_safe_ntfy_word "$priority" || { echo "ntfy_config_write=FAIL invalid_priority"; return 2; }
+  webui_safe_ntfy_word "$tags" || { echo "ntfy_config_write=FAIL invalid_tags"; return 2; }
+  webui_safe_ntfy_token_file "$token_file" || { echo "ntfy_config_write=FAIL invalid_token_file"; return 2; }
+  $MKDIR_BIN -p "$STATE_DIR/backups" >/dev/null 2>&1 || true
+  ts=$($DATE_BIN +%Y%m%d-%H%M%S 2>/dev/null || echo now)
+  [ -f "$CONFIG_FILE" ] && $CP_BIN -f "$CONFIG_FILE" "$STATE_DIR/backups/config.env.pre-webui-ntfy-$ts" 2>/dev/null || true
+  tmp="$CONFIG_FILE.webui.$$"
+  if [ -f "$CONFIG_FILE" ]; then $GREP_BIN -v -E "^(NTFY_ENABLED|NTFY_TOPIC|NTFY_URL|NTFY_TOKEN_FILE|NTFY_PRIORITY|NTFY_TAGS)=" "$CONFIG_FILE" > "$tmp" 2>/dev/null || true; else : > "$tmp"; fi
+  echo "NTFY_ENABLED=$enabled" >> "$tmp"
+  printf "NTFY_TOPIC=%s\n" "$topic" >> "$tmp"
+  printf "NTFY_URL=%s\n" "$url" >> "$tmp"
+  printf "NTFY_PRIORITY=%s\n" "$priority" >> "$tmp"
+  printf "NTFY_TAGS=%s\n" "$tags" >> "$tmp"
+  printf "NTFY_TOKEN_FILE=%s\n" "$token_file" >> "$tmp"
+  $MV_BIN -f "$tmp" "$CONFIG_FILE"
+  $CHMOD_BIN 600 "$CONFIG_FILE" >/dev/null 2>&1 || true
+  load_config || true
+  echo "ntfy_config_write=PASS"
+  webui_status
+}
+
+webui_ntfy_test(){
+  notify_delivery PASS webui webui-ntfy-test manual-test
+  if $TAIL_BIN -n 40 "$LOG_FILE" 2>/dev/null | $GREP_BIN -F "webui-ntfy-test" | $GREP_BIN -F "NTFY_SENT" >/dev/null 2>&1; then echo "webui_ntfy_test=PASS"; else echo "webui_ntfy_test=WARN_NOT_SEEN"; fi
+  $TAIL_BIN -n 40 "$LOG_FILE" 2>/dev/null | $GREP_BIN -F "webui-ntfy-test" | $TAIL_BIN -n 5 || true
+}
+
 runtime_status(){
   echo "== version =="
   $GREP_BIN -E "^(version=|versionCode=)" "$MODDIR/module.prop" 2>/dev/null || true
@@ -1578,6 +1641,12 @@ case "${1:-}" in
     ;;
   --webui-log-tail)
     wait_boot; import_bundle_if_needed; load_config || exit 1; webui_log_tail "${2:-160}"
+    ;;
+  --webui-ntfy-set)
+    wait_boot; import_bundle_if_needed; load_config || exit 1; webui_ntfy_set "${2:-}" "${3:-}" "${4:-}" "${5:-default}" "${6:-package}" "${7:-}"
+    ;;
+  --webui-ntfy-test)
+    wait_boot; import_bundle_if_needed; load_config || exit 1; webui_ntfy_test
     ;;
   --scan-once)
     reason="${2:-manual_scan}"
