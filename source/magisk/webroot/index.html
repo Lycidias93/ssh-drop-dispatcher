@@ -43,6 +43,14 @@
   <div style="height:8px"></div>
   <button onclick="requeue()">Requeue selected file</button>
 
+
+  <h2>Ntfy Settings</h2>
+  <div class="hint">Secret-safe runtime config. Topic is never printed by status output.</div>
+  <div class="grid">
+    <button onclick="ntfySet()">Set ntfy config</button>
+    <button onclick="ntfyTest()">Send ntfy test</button>
+  </div>
+
   <h2>Output</h2>
   <pre id="out">Loading status...</pre>
 
@@ -93,6 +101,18 @@ su -c ' + shellQuote(command));
 
 ' + e); }
 }
+
+function ntfySet(){
+  const en = prompt("NTFY_ENABLED 1/0", "1") || "";
+  const topic = prompt("NTFY_TOPIC without URL, blank allowed", "") || "";
+  const url = prompt("NTFY_URL optional, blank uses topic", "") || "";
+  const priority = prompt("NTFY_PRIORITY", "default") || "default";
+  const tags = prompt("NTFY_TAGS", "package") || "package";
+  const tokenFile = prompt("NTFY_TOKEN_FILE optional absolute path, token never shown", "") || "";
+  execCommand(svc + " --webui-ntfy-set " + [en, topic, url, priority, tags, tokenFile].map(shellQuote).join(" "));
+}
+function ntfyTest(){ execCommand(svc + " --webui-ntfy-test"); }
+
 function run(name){ execCommand(cmds[name]); }
 function requeue(){
   const value = document.getElementById('file').value.trim();

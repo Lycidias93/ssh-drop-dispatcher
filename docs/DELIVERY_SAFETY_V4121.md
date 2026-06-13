@@ -98,3 +98,7 @@ rc5 keeps the rc4 retry gate but changes the space and inode probes to parse rem
 ## v4.12.1 final verification
 
 Post-reboot smoke passed for rc5: BerylAX/OpenWrt df parser returns available space, pi4 and BerylAX break-glass SCP pass, ntfy PASS notifications are emitted, dispatcher health is OK, and Sortify marker policy remains v4115.
+
+## v4.12.2 WebUI ntfy settings rc1
+
+Secret-safe WebUI ntfy controls can set runtime config and send a test notification. Token contents are never displayed; existing v4.12.1 delivery safety behavior and Sortify marker policy v4115 remain unchanged.
