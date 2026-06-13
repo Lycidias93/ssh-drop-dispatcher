@@ -1,3 +1,8 @@
+## v4.12.2 - 2026-06-13
+
+- Promote WebUI ntfy settings rc1 to final v4.12.2 after runtime smoke passed.
+- WebUI can set secret-safe ntfy runtime config and send a test notification. Existing v4.12.1 delivery safety behavior and Sortify marker policy v4115 remain unchanged.
+
 ## v4.12.2-webui-rc1 - 2026-06-13
 
 - Add secret-safe WebUI ntfy settings actions: set config, preserve token secrecy, backup config before changes, and send test notification.
