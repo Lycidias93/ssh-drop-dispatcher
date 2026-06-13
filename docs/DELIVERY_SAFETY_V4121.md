@@ -102,3 +102,7 @@ Post-reboot smoke passed for rc5: BerylAX/OpenWrt df parser returns available sp
 ## v4.12.2 WebUI ntfy settings rc1
 
 Secret-safe WebUI ntfy controls can set runtime config and send a test notification. Token contents are never displayed; existing v4.12.1 delivery safety behavior and Sortify marker policy v4115 remain unchanged.
+
+## v4.12.2 final WebUI verification
+
+Final v4.12.2 promotes the WebUI ntfy settings rc1 after runtime smoke: secret-safe status, ntfy config write, ntfy test notification, WebUI command hooks, runtime health OK, and unchanged Sortify marker policy v4115.
