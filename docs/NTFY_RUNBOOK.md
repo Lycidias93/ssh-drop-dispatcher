@@ -59,3 +59,7 @@ Runtime smoke passed with secret-safe status, ntfy test push, BerylAX verify, Be
 ## Already-present ntfy info
 
 When a fully delivered file reappears in the scan root with the same record and a newer local mtime than its Sortify release marker, SDD sends one debounced INFO notification: `reason: already_present`. This indicates dedupe/no-upload, not a delivery failure.
+
+## Already-present rc2 notes
+
+`v4.12.4-already-present-rc2` sends `reason: already_present` only when the delivered local file is newer than its Sortify release marker. The mtime probe tries Termux stat, system stat and toybox stat. WebUI status exposes `already_present_notify_enabled=yes|no`.
