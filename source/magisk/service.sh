@@ -16,6 +16,7 @@ FAIL_DB=$STATE_DIR/dispatch.faildb
 QUAR_DB=$STATE_DIR/dispatch.quarantined
 INFLIGHT_DB=$STATE_DIR/dispatch.inflight
 COMPLETE_DB=$STATE_DIR/dispatch.complete
+ALREADY_PRESENT_NTFY_DB=$STATE_DIR/dispatch.already-present.ntfy
 BREAKGLASS_LOG=$STATE_DIR/breakglass.log
 HEALTH_FILE=$STATE_DIR/health.env
 IMPORT_STAMP=$STATE_DIR/.bundle.imported.version
@@ -62,7 +63,7 @@ TOYBOX_BIN=/system/bin/toybox
 TAIL_BIN=/system/bin/tail
 
 $MKDIR_BIN -p "$LOG_DIR" "$SSH_DIR" "$SORTIFY_RELEASE_DIR" >/dev/null 2>&1
-$TOUCH_BIN "$LOG_FILE" "$DONE_FILE" "$FAIL_DB" "$QUAR_DB" "$INFLIGHT_DB" "$COMPLETE_DB" "$BREAKGLASS_LOG" >/dev/null 2>&1
+$TOUCH_BIN "$LOG_FILE" "$DONE_FILE" "$FAIL_DB" "$QUAR_DB" "$INFLIGHT_DB" "$COMPLETE_DB" "$ALREADY_PRESENT_NTFY_DB" "$BREAKGLASS_LOG" >/dev/null 2>&1
 
 log(){ printf "%s %s\n" "$( $DATE_BIN "+%F %T")" "$*" >> "$LOG_FILE"; }
 pid_alive(){ p="$1"; [ -n "$p" ] && $KILL_BIN -0 "$p" >/dev/null 2>&1; }
@@ -212,6 +213,7 @@ create_default_config_if_missing(){
     echo "DROP_DISPATCH_SCAN_DIR=/storage/emulated/0/Download"
     echo "DROP_DISPATCH_SETTLE_SECONDS=2"
     echo "DROP_DISPATCH_FALLBACK_RESCAN_SECONDS=1800"
+    echo "DROP_DISPATCH_NOTIFY_ALREADY_PRESENT=1"
     echo "DROP_DISPATCH_SCAN_MAX_PASSES=8"
     echo "DROP_DISPATCH_STALE_LOCK_SECONDS=600"
     echo "DROP_DISPATCH_WATCHDOG_SECONDS=60"
@@ -304,6 +306,7 @@ load_config(){
   DROP_DISPATCH_SETTLE_SECONDS=${DROP_DISPATCH_SETTLE_SECONDS:-2}
   DROP_DISPATCH_FALLBACK_RESCAN_SECONDS=${DROP_DISPATCH_FALLBACK_RESCAN_SECONDS:-1800}
   DROP_DISPATCH_LOG_SKIP_COMPLETE=${DROP_DISPATCH_LOG_SKIP_COMPLETE:-0}
+  DROP_DISPATCH_NOTIFY_ALREADY_PRESENT=${DROP_DISPATCH_NOTIFY_ALREADY_PRESENT:-1}
   DROP_DISPATCH_SCAN_MAX_PASSES=${DROP_DISPATCH_SCAN_MAX_PASSES:-8}
   DROP_DISPATCH_STALE_LOCK_SECONDS=${DROP_DISPATCH_STALE_LOCK_SECONDS:-600}
   DROP_DISPATCH_WATCHDOG_SECONDS=${DROP_DISPATCH_WATCHDOG_SECONDS:-60}
@@ -367,6 +370,43 @@ already_done(){ $GREP_BIN -Fqx "$1|target=$2" "$DONE_FILE"; }
 record_done(){ already_done "$1" "$2" && return 0; printf "%s|target=%s\n" "$1" "$2" >> "$DONE_FILE"; }
 complete_recorded(){ $GREP_BIN -Fqx "$1" "$COMPLETE_DB"; }
 record_complete(){ complete_recorded "$1" && return 0; printf "%s\n" "$1" >> "$COMPLETE_DB"; }
+
+
+file_mtime_epoch(){
+  f="$1"
+  if [ -x "$TOYBOX_BIN" ]; then "$TOYBOX_BIN" stat -c %Y "$f" 2>/dev/null && return 0; fi
+  stat -c %Y "$f" 2>/dev/null && return 0
+  printf "0"
+}
+
+already_present_targets_key(){ printf "%s" "$1" | $SED_BIN "s/^ *//;s/  */_/g" 2>/dev/null; }
+already_present_notified(){ $GREP_BIN -Fqx "$1" "$ALREADY_PRESENT_NTFY_DB" 2>/dev/null; }
+record_already_present_notified(){ already_present_notified "$1" && return 0; printf "%s
+" "$1" >> "$ALREADY_PRESENT_NTFY_DB"; }
+
+notify_already_present(){
+  file="$1"; rec="$2"; targets="$3"
+  case "${DROP_DISPATCH_NOTIFY_ALREADY_PRESENT:-1}" in 1|yes|YES|true|TRUE|on|ON) ;; *) return 0;; esac
+  [ -f "$file" ] || return 0
+  base=$($BASENAME_BIN "$file")
+  mtime=$(file_mtime_epoch "$file")
+  mtime=$(to_int_or_zero "$mtime")
+  sum=$(file_sha256 "$file")
+  marker="$SORTIFY_RELEASE_DIR/$sum.env"
+  if [ -f "$marker" ]; then
+    marker_mtime=$(file_mtime_epoch "$marker")
+    marker_mtime=$(to_int_or_zero "$marker_mtime")
+    [ "$mtime" -le "$marker_mtime" ] && return 0
+  fi
+  tkey=$(already_present_targets_key "$targets")
+  [ -n "$tkey" ] || tkey=unknown
+  key="$rec|targets=$tkey|mtime=$mtime"
+  already_present_notified "$key" && return 0
+  log "INFO already_present file=$base targets=$(sq "$targets") mtime=$mtime policy=$PIDD_POLICY_VERSION"
+  for t in $targets; do notify_delivery INFO "$t" "$base" already_present; done
+  record_already_present_notified "$key"
+  return 0
+}
 quarantined(){ $GREP_BIN -Fqx "$1|target=$2|reason=$3|policy=$PIDD_POLICY_VERSION" "$QUAR_DB"; }
 add_quarantine(){ quarantined "$1" "$2" "$3" && return 0; printf "%s|target=%s|reason=%s|policy=%s\n" "$1" "$2" "$3" "$PIDD_POLICY_VERSION" >> "$QUAR_DB"; }
 inflight(){ $GREP_BIN -Fqx "$1|target=$2" "$INFLIGHT_DB"; }
@@ -1185,11 +1225,13 @@ process_file(){
   [ -n "$targets" ] || return 0
 
   if complete_recorded "$rec"; then
+    notify_already_present "$file" "$rec" "$targets"
     [ "${DROP_DISPATCH_LOG_SKIP_COMPLETE:-0}" = "1" ] && log "SKIP complete file=$base"
     return 0
   fi
 
   if fully_done_or_blocked "$rec" "$targets"; then
+    notify_already_present "$file" "$rec" "$targets"
     all_done=1
     for t in $targets; do already_done "$rec" "$t" || all_done=0; done
     if [ "$all_done" = "1" ]; then
@@ -1264,10 +1306,14 @@ queue_candidate(){
   [ -n "$targets" ] || return 0
   rec=$(record "$f")
   if complete_recorded "$rec"; then
+    notify_already_present "$f" "$rec" "$targets"
     [ "${DROP_DISPATCH_LOG_SKIP_COMPLETE:-0}" = "1" ] && log "SKIP complete file=$b"
     return 0
   fi
-  fully_done_or_blocked "$rec" "$targets" && return 0
+  if fully_done_or_blocked "$rec" "$targets"; then
+    notify_already_present "$f" "$rec" "$targets"
+    return 0
+  fi
   printf "%s\n" "$f" >> "$TMP_PENDING_LIST"
 }
 

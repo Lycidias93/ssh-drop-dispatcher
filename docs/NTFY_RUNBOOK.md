@@ -55,3 +55,7 @@ su -c 'grep -E "NTFY_|BREAKGLASS|PASS space|FAIL space" /data/adb/ssh-drop-dispa
 ## Final v4.12.3 verification
 
 Runtime smoke passed with secret-safe status, ntfy test push, BerylAX verify, BerylAX breakglass proof, ntfy log evidence, runtime health OK, `host_run=no`, and Sortify marker policy `v4115` unchanged.
+
+## Already-present ntfy info
+
+When a fully delivered file reappears in the scan root with the same record and a newer local mtime than its Sortify release marker, SDD sends one debounced INFO notification: `reason: already_present`. This indicates dedupe/no-upload, not a delivery failure.
