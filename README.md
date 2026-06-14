@@ -327,3 +327,7 @@ Final v4.12.3 promotes the ntfy notification format after smoke proof: 🟢 PASS
 ### v4.12.4 already-present rc1
 
 Adds a debounced ntfy INFO push when a file is already fully delivered and reappears in the scan root. This explains dedupe/no-upload cases without changing delivery logic or Sortify marker policy v4115.
+
+### v4.12.4 already-present rc2
+
+Refines already-present ntfy INFO notifications with robust mtime probing and exposes `already_present_notify_enabled` in WebUI status. No delivery, host-run, route, or Sortify policy changes.

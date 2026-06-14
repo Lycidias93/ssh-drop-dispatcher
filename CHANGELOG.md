@@ -210,3 +210,9 @@
 - Writes SCAN_DIR to runtime config.env.
 - Initial setup can continue into SSH target setup.
 - Updated README, installation, configuration, features and XDA documentation.
+
+## v4.12.4-already-present-rc2 - 2026-06-14
+
+- Fix rc1 already-present ntfy miss with robust mtime probing.
+- Add WebUI status field `already_present_notify_enabled`.
+- Keep upload logic, host-run behavior, DNS/route behavior and Sortify marker policy v4115 unchanged.

@@ -374,9 +374,10 @@ record_complete(){ complete_recorded "$1" && return 0; printf "%s\n" "$1" >> "$C
 
 file_mtime_epoch(){
   f="$1"
-  if [ -x "$TOYBOX_BIN" ]; then "$TOYBOX_BIN" stat -c %Y "$f" 2>/dev/null && return 0; fi
-  stat -c %Y "$f" 2>/dev/null && return 0
-  printf "0"
+  if [ -x /data/data/com.termux/files/usr/bin/stat ]; then /data/data/com.termux/files/usr/bin/stat -c %Y "$f" 2>/dev/null | $GREP_BIN -E "^[0-9]+$" | $TAIL_BIN -n 1 && return 0; fi
+  if [ -x /system/bin/stat ]; then /system/bin/stat -c %Y "$f" 2>/dev/null | $GREP_BIN -E "^[0-9]+$" | $TAIL_BIN -n 1 && return 0; fi
+  if [ -x "$TOYBOX_BIN" ]; then "$TOYBOX_BIN" stat -c %Y "$f" 2>/dev/null | $GREP_BIN -E "^[0-9]+$" | $TAIL_BIN -n 1 && return 0; fi
+  return 1
 }
 
 already_present_targets_key(){ printf "%s" "$1" | $SED_BIN "s/^ *//;s/  */_/g" 2>/dev/null; }
@@ -389,15 +390,20 @@ notify_already_present(){
   case "${DROP_DISPATCH_NOTIFY_ALREADY_PRESENT:-1}" in 1|yes|YES|true|TRUE|on|ON) ;; *) return 0;; esac
   [ -f "$file" ] || return 0
   base=$($BASENAME_BIN "$file")
-  mtime=$(file_mtime_epoch "$file")
-  mtime=$(to_int_or_zero "$mtime")
+  mtime=$(file_mtime_epoch "$file" || true)
+  case "$mtime" in ""|*[!0-9]*) mtime="" ;; esac
   sum=$(file_sha256 "$file")
   marker="$SORTIFY_RELEASE_DIR/$sum.env"
+  marker_mtime=""
   if [ -f "$marker" ]; then
-    marker_mtime=$(file_mtime_epoch "$marker")
-    marker_mtime=$(to_int_or_zero "$marker_mtime")
-    [ "$mtime" -le "$marker_mtime" ] && return 0
+    marker_mtime=$(file_mtime_epoch "$marker" || true)
+    case "$marker_mtime" in ""|*[!0-9]*) marker_mtime="" ;; esac
+    if [ -n "$mtime" ] && [ -n "$marker_mtime" ] && [ "$mtime" -le "$marker_mtime" ]; then
+      log "INFO already_present_suppressed file=$base reason=marker_not_newer file_mtime=$mtime marker_mtime=$marker_mtime policy=$PIDD_POLICY_VERSION"
+      return 0
+    fi
   fi
+  [ -n "$mtime" ] || mtime=unknown
   tkey=$(already_present_targets_key "$targets")
   [ -n "$tkey" ] || tkey=unknown
   key="$rec|targets=$tkey|mtime=$mtime"
@@ -924,6 +930,7 @@ breakglass_log_tail(){
   fi
 }
 
+# v4.12.4 rc2 already-present mtime probe: Termux/system/toybox stat fallback and WebUI status exposure.
 # v4.12.1 rc4 notification + handover helpers: ntfy delivery events, remote-first delivery status and wait diagnostics.
 notify_enabled(){
   case "${NTFY_ENABLED:-0}" in 1|yes|YES|true|TRUE|on|ON) return 0 ;; *) return 1 ;; esac
@@ -1486,6 +1493,7 @@ webui_status(){
   echo "ntfy_enabled=${NTFY_ENABLED:-0}"
   [ -n "${NTFY_URL:-}${NTFY_TOPIC:-}" ] && echo "ntfy_endpoint_configured=yes" || echo "ntfy_endpoint_configured=no"
   echo "ntfy_token_file_configured=$([ -n "${NTFY_TOKEN_FILE:-}" ] && echo yes || echo no)"
+  case "${DROP_DISPATCH_NOTIFY_ALREADY_PRESENT:-1}" in 1|yes|YES|true|TRUE|on|ON) echo "already_present_notify_enabled=yes" ;; *) echo "already_present_notify_enabled=no" ;; esac
   echo "== tools =="
   for x in dispatch-config.sh pidd-config.sh pidd-doctor.sh pidd-health.sh pidd-migrate-config.sh; do
     [ -x "$TOOLS_DIR/$x" ] && echo "$x=ok" || echo "$x=missing"
