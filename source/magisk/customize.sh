@@ -10,7 +10,7 @@ TERMUX_CMD=$TERMUX_BIN/dispatch-config
 RUNTIME_BIN=$STATE_DIR/bin
 RUNTIME_CMD=$RUNTIME_BIN/dispatch-config
 
-ui_print "SSH Drop Dispatcher 4.12.3"
+ui_print "SSH Drop Dispatcher 4.12.4-already-present-rc1"
 ui_print "Runtime SoT: $STATE_DIR"
 ui_print "Author: Lycidias93
 Delivery safety target checks + break-glass SCP + delivery status/wait + ntfy notifications + space-probe retry + Sortify marker contract: final + WebUI ntfy settings final

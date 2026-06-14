@@ -323,3 +323,7 @@ Ntfy notifications now use a minimal traffic-light title and compact body: file,
 ### v4.12.3 final
 
 Final v4.12.3 promotes the ntfy notification format after smoke proof: 🟢 PASS title, compact body, BerylAX breakglass proof, ntfy log evidence, and unchanged Sortify marker policy v4115. See `docs/NTFY_RUNBOOK.md`.
+
+### v4.12.4 already-present rc1
+
+Adds a debounced ntfy INFO push when a file is already fully delivered and reappears in the scan root. This explains dedupe/no-upload cases without changing delivery logic or Sortify marker policy v4115.

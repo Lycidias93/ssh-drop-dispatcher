@@ -1,3 +1,9 @@
+## v4.12.4-already-present-rc1 - 2026-06-14
+
+- Add ntfy INFO notification when an already delivered file reappears in the scan root with a newer mtime than its Sortify release marker.
+- Debounce already-present notifications by record, targets and local mtime via runtime state `dispatch.already-present.ntfy`.
+- Keep upload, host-run, Sortify marker policy v4115, WebUI ntfy settings and target routing unchanged.
+
 ## v4.12.3 - 2026-06-13
 
 - Promote ntfy notification format rc1 to final v4.12.3 after runtime smoke passed.
