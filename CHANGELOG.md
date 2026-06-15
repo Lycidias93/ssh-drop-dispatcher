@@ -224,3 +224,10 @@
 - Confirmed debounce keeps repeated dispatches from sending duplicate INFO notifications.
 - WebUI status exposes `already_present_notify_enabled`; `docs/NTFY_RUNBOOK.md` documents the behaviour.
 - Sortify marker policy remains `v4115`; no host-run, DNS, HA, VIP or route changes.
+
+## 2026-06-15 - SDD v4.12.5 duplicate-alias guard rc1
+
+- Adds duplicate-alias detection for Android/browser download suffixes such as `name-1.ext` and `name (1).ext`.
+- Keeps Sortify policy `v4115` unchanged while adding canonical-name metadata to release markers.
+- Adds WebUI status fields for duplicate-alias guard and canonical-complete counters.
+- No host-run, DNS, HA, VIP, route, MagicDNS or subnet-route change.

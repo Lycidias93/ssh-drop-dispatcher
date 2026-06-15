@@ -335,3 +335,9 @@ Refines already-present ntfy INFO notifications with robust mtime probing and ex
 ### v4.12.4 final
 
 Finalizes already-present ntfy INFO notifications. When an already delivered file reappears in the scan root and is newer than its Sortify release marker, SDD sends one debounced INFO notification with `reason: already_present`. WebUI status includes `already_present_notify_enabled`. Delivery logic, host-run behaviour, routing and Sortify policy `v4115` are unchanged.
+
+## SDD v4.12.5 duplicate-alias guard rc1
+
+The dispatcher now treats Android/browser download suffixes as candidate aliases when the canonical name and content digest match an already completed delivery. A file such as `target-pi3__demo-1.sh` can be reported as `INFO duplicate_alias` instead of being uploaded a second time when `target-pi3__demo.sh` with the same digest is already complete.
+
+The guard keeps Sortify policy `v4115` unchanged and records canonical-name metadata in Sortify release markers. WebUI status exposes `duplicate_alias_guard_enabled`, `duplicate_alias_notify_records`, and `canonical_complete_records`.
