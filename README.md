@@ -331,3 +331,7 @@ Adds a debounced ntfy INFO push when a file is already fully delivered and reapp
 ### v4.12.4 already-present rc2
 
 Refines already-present ntfy INFO notifications with robust mtime probing and exposes `already_present_notify_enabled` in WebUI status. No delivery, host-run, route, or Sortify policy changes.
+
+### v4.12.4 final
+
+Finalizes already-present ntfy INFO notifications. When an already delivered file reappears in the scan root and is newer than its Sortify release marker, SDD sends one debounced INFO notification with `reason: already_present`. WebUI status includes `already_present_notify_enabled`. Delivery logic, host-run behaviour, routing and Sortify policy `v4115` are unchanged.

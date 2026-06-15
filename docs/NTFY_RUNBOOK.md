@@ -63,3 +63,11 @@ When a fully delivered file reappears in the scan root with the same record and 
 ## Already-present rc2 notes
 
 `v4.12.4-already-present-rc2` sends `reason: already_present` only when the delivered local file is newer than its Sortify release marker. The mtime probe tries Termux stat, system stat and toybox stat. WebUI status exposes `already_present_notify_enabled=yes|no`.
+
+## v4.12.4 final verification
+
+- PASS notification remains `reason: delivered`.
+- Already-present notification is `status=INFO`, target-specific, and uses `reason: already_present`.
+- Repeated dispatch without another mtime change is debounced.
+- WebUI status field: `already_present_notify_enabled=yes|no`.
+- Sortify marker policy remains `v4115`; host_run remains `no`.
