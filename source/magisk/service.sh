@@ -17,6 +17,8 @@ QUAR_DB=$STATE_DIR/dispatch.quarantined
 INFLIGHT_DB=$STATE_DIR/dispatch.inflight
 COMPLETE_DB=$STATE_DIR/dispatch.complete
 ALREADY_PRESENT_NTFY_DB=$STATE_DIR/dispatch.already-present.ntfy
+DUPLICATE_ALIAS_NTFY_DB=$STATE_DIR/dispatch.duplicate-alias.ntfy
+CANONICAL_COMPLETE_DB=$STATE_DIR/dispatch.canonical.complete
 BREAKGLASS_LOG=$STATE_DIR/breakglass.log
 HEALTH_FILE=$STATE_DIR/health.env
 IMPORT_STAMP=$STATE_DIR/.bundle.imported.version
@@ -34,6 +36,7 @@ LAST_EVENT_FILE=$STATE_DIR/.last_event
 TMP_SCAN_LIST=$STATE_DIR/.scan.list
 TMP_PENDING_LIST=$STATE_DIR/.scan.pending
 PIDD_POLICY_VERSION=v4115
+# v4.12.5 duplicate-alias guard keeps Sortify marker policy unchanged.
 # v4.12.1 delivery-safety keeps Sortify marker policy unchanged.
 SORTIFY_RELEASE_DIR=$STATE_DIR/integration/sortify-release
 
@@ -63,7 +66,7 @@ TOYBOX_BIN=/system/bin/toybox
 TAIL_BIN=/system/bin/tail
 
 $MKDIR_BIN -p "$LOG_DIR" "$SSH_DIR" "$SORTIFY_RELEASE_DIR" >/dev/null 2>&1
-$TOUCH_BIN "$LOG_FILE" "$DONE_FILE" "$FAIL_DB" "$QUAR_DB" "$INFLIGHT_DB" "$COMPLETE_DB" "$ALREADY_PRESENT_NTFY_DB" "$BREAKGLASS_LOG" >/dev/null 2>&1
+$TOUCH_BIN "$LOG_FILE" "$DONE_FILE" "$FAIL_DB" "$QUAR_DB" "$INFLIGHT_DB" "$COMPLETE_DB" "$ALREADY_PRESENT_NTFY_DB" "$DUPLICATE_ALIAS_NTFY_DB" "$CANONICAL_COMPLETE_DB" "$BREAKGLASS_LOG" >/dev/null 2>&1
 
 log(){ printf "%s %s\n" "$( $DATE_BIN "+%F %T")" "$*" >> "$LOG_FILE"; }
 pid_alive(){ p="$1"; [ -n "$p" ] && $KILL_BIN -0 "$p" >/dev/null 2>&1; }
@@ -214,6 +217,7 @@ create_default_config_if_missing(){
     echo "DROP_DISPATCH_SETTLE_SECONDS=2"
     echo "DROP_DISPATCH_FALLBACK_RESCAN_SECONDS=1800"
     echo "DROP_DISPATCH_NOTIFY_ALREADY_PRESENT=1"
+    echo "DROP_DISPATCH_DUPLICATE_ALIAS_GUARD=1"
     echo "DROP_DISPATCH_SCAN_MAX_PASSES=8"
     echo "DROP_DISPATCH_STALE_LOCK_SECONDS=600"
     echo "DROP_DISPATCH_WATCHDOG_SECONDS=60"
@@ -307,6 +311,7 @@ load_config(){
   DROP_DISPATCH_FALLBACK_RESCAN_SECONDS=${DROP_DISPATCH_FALLBACK_RESCAN_SECONDS:-1800}
   DROP_DISPATCH_LOG_SKIP_COMPLETE=${DROP_DISPATCH_LOG_SKIP_COMPLETE:-0}
   DROP_DISPATCH_NOTIFY_ALREADY_PRESENT=${DROP_DISPATCH_NOTIFY_ALREADY_PRESENT:-1}
+  DROP_DISPATCH_DUPLICATE_ALIAS_GUARD=${DROP_DISPATCH_DUPLICATE_ALIAS_GUARD:-1}
   DROP_DISPATCH_SCAN_MAX_PASSES=${DROP_DISPATCH_SCAN_MAX_PASSES:-8}
   DROP_DISPATCH_STALE_LOCK_SECONDS=${DROP_DISPATCH_STALE_LOCK_SECONDS:-600}
   DROP_DISPATCH_WATCHDOG_SECONDS=${DROP_DISPATCH_WATCHDOG_SECONDS:-60}
@@ -370,6 +375,78 @@ already_done(){ $GREP_BIN -Fqx "$1|target=$2" "$DONE_FILE"; }
 record_done(){ already_done "$1" "$2" && return 0; printf "%s|target=%s\n" "$1" "$2" >> "$DONE_FILE"; }
 complete_recorded(){ $GREP_BIN -Fqx "$1" "$COMPLETE_DB"; }
 record_complete(){ complete_recorded "$1" && return 0; printf "%s\n" "$1" >> "$COMPLETE_DB"; }
+
+
+duplicate_alias_guard_enabled(){ case "${DROP_DISPATCH_DUPLICATE_ALIAS_GUARD:-1}" in 1|yes|YES|true|TRUE|on|ON) return 0 ;; *) return 1 ;; esac; }
+canonical_name(){
+  b="$1"
+  case "$b" in
+    *.*) printf "%s" "$b" | $SED_BIN -E "s/(.*)-[0-9]+(\.[^.]+)$/\1\2/; s/(.*) \([0-9]+\)(\.[^.]+)$/\1\2/" ;;
+    *) printf "%s" "$b" ;;
+  esac
+}
+canonical_targets_key(){ printf "%s" "$1" | $SED_BIN "s/^ *//;s/  */_/g" 2>/dev/null; }
+canonical_complete_key(){
+  canon="$1"; sum="$2"; targets="$3"
+  tkey=$(canonical_targets_key "$targets")
+  [ -n "$tkey" ] || tkey=unknown
+  printf "canonical=%s|sha256=%s|targets=%s|policy=%s" "$canon" "$sum" "$tkey" "$PIDD_POLICY_VERSION"
+}
+canonical_complete_recorded(){ $GREP_BIN -Fqx "$1" "$CANONICAL_COMPLETE_DB" 2>/dev/null; }
+record_canonical_complete(){
+  canon="$1"; sum="$2"; targets="$3"
+  key=$(canonical_complete_key "$canon" "$sum" "$targets")
+  canonical_complete_recorded "$key" && return 0
+  printf "%s\n" "$key" >> "$CANONICAL_COMPLETE_DB"
+}
+canonical_complete_for_name_targets(){
+  canon="$1"; targets="$2"
+  tkey=$(canonical_targets_key "$targets")
+  [ -n "$tkey" ] || tkey=unknown
+  $GREP_BIN -F "canonical=$canon|" "$CANONICAL_COMPLETE_DB" 2>/dev/null | $GREP_BIN -F "|targets=$tkey|" >/dev/null 2>&1
+}
+duplicate_alias_notified(){ $GREP_BIN -Fqx "$1" "$DUPLICATE_ALIAS_NTFY_DB" 2>/dev/null; }
+record_duplicate_alias_notified(){ duplicate_alias_notified "$1" && return 0; printf "%s\n" "$1" >> "$DUPLICATE_ALIAS_NTFY_DB"; }
+notify_duplicate_alias_once(){
+  status="$1"; reason="$2"; base="$3"; canon="$4"; sum="$5"; targets="$6"
+  tkey=$(canonical_targets_key "$targets")
+  [ -n "$tkey" ] || tkey=unknown
+  key="$status|reason=$reason|file=$base|canonical=$canon|sha256=$sum|targets=$tkey|policy=$PIDD_POLICY_VERSION"
+  if duplicate_alias_notified "$key"; then
+    log "INFO duplicate_alias_suppressed file=$base canonical=$canon reason=$reason sha256=$sum policy=$PIDD_POLICY_VERSION"
+    return 0
+  fi
+  log "$status duplicate_alias file=$base canonical=$canon reason=$reason sha256=$sum targets=$(sq "$targets") policy=$PIDD_POLICY_VERSION"
+  for t in $targets; do notify_delivery "$status" "$t" "$base" "$reason"; done
+  record_duplicate_alias_notified "$key"
+  return 0
+}
+handle_duplicate_alias(){
+  file="$1"; rec="$2"; targets="$3"
+  duplicate_alias_guard_enabled || return 1
+  [ -f "$file" ] || return 1
+  base=$($BASENAME_BIN "$file")
+  canon=$(canonical_name "$base")
+  [ -n "$canon" ] || return 1
+  [ "$canon" = "$base" ] && return 1
+  sum=$(file_sha256 "$file")
+  [ -n "$sum" ] || return 1
+  key=$(canonical_complete_key "$canon" "$sum" "$targets")
+  marker="$SORTIFY_RELEASE_DIR/$sum.env"
+  if canonical_complete_recorded "$key" || [ -f "$marker" ]; then
+    record_canonical_complete "$canon" "$sum" "$targets"
+    record_complete "$rec"
+    notify_duplicate_alias_once INFO duplicate_alias "$base" "$canon" "$sum" "$targets"
+    return 0
+  fi
+  if canonical_complete_for_name_targets "$canon" "$targets" || sortify_marker_for_base "$canon"; then
+    for t in $targets; do add_quarantine "$rec" "$t" canonical_collision; done
+    log "WARN canonical_collision file=$base canonical=$canon sha256=$sum policy=$PIDD_POLICY_VERSION"
+    notify_duplicate_alias_once WARN content_changed_same_canonical_name "$base" "$canon" "$sum" "$targets"
+    return 0
+  fi
+  return 1
+}
 
 
 file_mtime_epoch(){
@@ -454,6 +531,8 @@ release_sortify_marker(){
     printf "released=yes\n"
     printf "authority=dispatcher\n"
     printf "filename=%s\n" "$(sq "$base")"
+    printf "canonical_name=%s\n" "$(sq "$canon")"
+    printf "duplicate_alias_guard=%s\n" "${DROP_DISPATCH_DUPLICATE_ALIAS_GUARD:-1}"
     printf "sha256=%s\n" "$sum"
     printf "size=%s\n" "$size"
     printf "rec=%s\n" "$(sq "$rec")"
@@ -1213,7 +1292,7 @@ fully_done_or_blocked(){
   all_quar=1
   for t in $targets; do
     already_done "$rec" "$t" || all_done=0
-    quarantined "$rec" "$t" local_preflight || quarantined "$rec" "$t" verify || all_quar=0
+    quarantined "$rec" "$t" local_preflight || quarantined "$rec" "$t" verify || quarantined "$rec" "$t" canonical_collision || all_quar=0
   done
   [ "$all_done" = "1" ] && return 0
   [ "$all_quar" = "1" ] && return 0
@@ -1230,6 +1309,7 @@ process_file(){
   rec=$(record "$file")
   targets=$(targets_for "$base")
   [ -n "$targets" ] || return 0
+  if handle_duplicate_alias "$file" "$rec" "$targets"; then return 0; fi
 
   if complete_recorded "$rec"; then
     notify_already_present "$file" "$rec" "$targets"
@@ -1312,6 +1392,7 @@ queue_candidate(){
   targets=$(targets_for "$b")
   [ -n "$targets" ] || return 0
   rec=$(record "$f")
+  if handle_duplicate_alias "$f" "$rec" "$targets"; then return 0; fi
   if complete_recorded "$rec"; then
     notify_already_present "$f" "$rec" "$targets"
     [ "${DROP_DISPATCH_LOG_SKIP_COMPLETE:-0}" = "1" ] && log "SKIP complete file=$b"
@@ -1389,6 +1470,7 @@ status_file(){
   base=$($BASENAME_BIN "$file")
   echo "base=$base"
   echo "path=$file"
+  echo "canonical_name=$(canonical_name "$base")"
   if [ -f "$file" ]; then
     rec=$(record "$file")
     echo "exists=yes"
@@ -1494,6 +1576,9 @@ webui_status(){
   [ -n "${NTFY_URL:-}${NTFY_TOPIC:-}" ] && echo "ntfy_endpoint_configured=yes" || echo "ntfy_endpoint_configured=no"
   echo "ntfy_token_file_configured=$([ -n "${NTFY_TOKEN_FILE:-}" ] && echo yes || echo no)"
   case "${DROP_DISPATCH_NOTIFY_ALREADY_PRESENT:-1}" in 1|yes|YES|true|TRUE|on|ON) echo "already_present_notify_enabled=yes" ;; *) echo "already_present_notify_enabled=no" ;; esac
+  case "${DROP_DISPATCH_DUPLICATE_ALIAS_GUARD:-1}" in 1|yes|YES|true|TRUE|on|ON) echo "duplicate_alias_guard_enabled=yes" ;; *) echo "duplicate_alias_guard_enabled=no" ;; esac
+  echo "duplicate_alias_notify_records=$($WC_BIN -l < "$DUPLICATE_ALIAS_NTFY_DB" 2>/dev/null | $TR_BIN -d " " 2>/dev/null || echo 0)"
+  echo "canonical_complete_records=$($WC_BIN -l < "$CANONICAL_COMPLETE_DB" 2>/dev/null | $TR_BIN -d " " 2>/dev/null || echo 0)"
   echo "== tools =="
   for x in dispatch-config.sh pidd-config.sh pidd-doctor.sh pidd-health.sh pidd-migrate-config.sh; do
     [ -x "$TOOLS_DIR/$x" ] && echo "$x=ok" || echo "$x=missing"

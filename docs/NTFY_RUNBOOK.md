@@ -71,3 +71,9 @@ When a fully delivered file reappears in the scan root with the same record and 
 - Repeated dispatch without another mtime change is debounced.
 - WebUI status field: `already_present_notify_enabled=yes|no`.
 - Sortify marker policy remains `v4115`; host_run remains `no`.
+
+## Duplicate-alias guard rc1
+
+- `INFO duplicate_alias`: the raw filename is a download-suffix alias for an already completed canonical artifact with the same digest; no second upload is expected.
+- `WARN content_changed_same_canonical_name`: the raw filename looks like an alias but has a different digest from an already completed canonical artifact; the dispatcher must not silently upload it.
+- WebUI status should show `duplicate_alias_guard_enabled=yes` when the guard is active.
