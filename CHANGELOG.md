@@ -216,3 +216,11 @@
 - Fix rc1 already-present ntfy miss with robust mtime probing.
 - Add WebUI status field `already_present_notify_enabled`.
 - Keep upload logic, host-run behavior, DNS/route behavior and Sortify marker policy v4115 unchanged.
+
+## v4.12.4 - 2026-06-14
+
+- Promote already-present ntfy INFO handling after rc2 smoke PASS.
+- Confirmed delivered-file dedupe sends `status=INFO` with `reason=already_present` after local mtime refresh.
+- Confirmed debounce keeps repeated dispatches from sending duplicate INFO notifications.
+- WebUI status exposes `already_present_notify_enabled`; `docs/NTFY_RUNBOOK.md` documents the behaviour.
+- Sortify marker policy remains `v4115`; no host-run, DNS, HA, VIP or route changes.
