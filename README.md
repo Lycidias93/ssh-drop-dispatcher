@@ -1,3 +1,19 @@
+<!-- SDD_V4125_FINAL_README_START -->
+## SDD v4.12.5 final
+
+`v4.12.5` promotes the duplicate-alias guard after Pixel/Magisk runtime smoke passed on `v4.12.5-duplicate-alias-rc1`.
+
+Verified behavior:
+
+- Original `target-*__*` / `targets-*__*` artifacts still deliver normally and emit `PASS` ntfy events with `reason: delivered`.
+- Android/browser download aliases such as `demo-1.sh` with the same canonical name and digest are suppressed with `INFO duplicate_alias`; no second upload and no second `PASS` event are expected.
+- Alias-shaped files with the same canonical name but a different digest emit `WARN content_changed_same_canonical_name` and are not silently uploaded.
+- Sortify marker policy remains `v4115` and markers now retain canonical metadata (`canonical_name`, `duplicate_alias_guard=1`).
+- WebUI status exposes `duplicate_alias_guard_enabled`, `duplicate_alias_notify_records`, and canonical completion state.
+
+Scope guard: no host-run, DNS, HA, VIP, route, MagicDNS, subnet-route, or host drop-path changes.
+<!-- SDD_V4125_FINAL_README_END -->
+
 <!-- SDD_V4120_WEBUI_CONTROL_START -->
 ## SSH Drop Dispatcher 4.12.0-webui-control-rc1 - WebUI control candidate
 
@@ -112,7 +128,7 @@ Public/private boundary:
 SSH Drop Dispatcher is an Android/Magisk file-drop dispatcher that routes files to configured SSH targets based on filename markers.
 
 Status:
-Public release: 4.11.0
+Public release: 4.12.5
 
 What it does:
 - Watches a local Android drop directory
@@ -163,7 +179,7 @@ Do not infer private runtime state from this public repository.
 - XDA draft: XDA_PUBLIC_RC_DRAFT.md
 ## Quick install
 
-1. Download ssh-drop-dispatcher-magisk-v4.11.0.zip from the release.
+1. Download ssh-drop-dispatcher-magisk-v4.12.5.zip from the release.
 2. Install it through Magisk.
 3. Reboot Android.
 4. Configure your own target files under /data/adb/ssh-drop-dispatcher/config/targets.d.

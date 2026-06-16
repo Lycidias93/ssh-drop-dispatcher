@@ -1,3 +1,16 @@
+<!-- SDD_V4125_NTFY_RUNBOOK_START -->
+## Duplicate-alias guard final
+
+`v4.12.5` uses ntfy to make duplicate and collision decisions visible:
+
+- `INFO duplicate_alias`: a download-suffix alias has the same canonical name and digest as an already completed artifact; no second upload is expected.
+- `WARN content_changed_same_canonical_name`: an alias-shaped filename has a different digest from the completed canonical artifact; the dispatcher must not silently upload it.
+- Expected WebUI field: `duplicate_alias_guard_enabled=yes`.
+- Expected invariant: `policy: v4115 · host_run: no` remains visible.
+
+No ntfy topic, token, URL or token-file contents belong in repository files.
+<!-- SDD_V4125_NTFY_RUNBOOK_END -->
+
 # SDD ntfy Runbook
 
 ## Status checks
