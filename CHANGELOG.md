@@ -1,3 +1,10 @@
+## v4.12.5 - 2026-06-16
+
+- Promote duplicate-alias guard rc1 to final after Pixel/Magisk runtime smoke passed.
+- Suppress Android/browser download aliases with the same canonical name and digest using `INFO duplicate_alias`; no second upload or duplicate PASS event is expected.
+- Warn and suppress alias-shaped canonical collisions with changed content using `WARN content_changed_same_canonical_name`.
+- Preserve Sortify marker policy `v4115` and add backward-compatible canonical metadata for marker/WebUI inspection.
+
 ## v4.12.4-already-present-rc1 - 2026-06-14
 
 - Add ntfy INFO notification when an already delivered file reappears in the scan root with a newer mtime than its Sortify release marker.
