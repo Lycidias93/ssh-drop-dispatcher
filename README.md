@@ -1,3 +1,7 @@
+<!-- telegram-release-channel:start -->
+> Release updates: [@lycidias93](https://t.me/lycidias93)
+<!-- telegram-release-channel:end -->
+
 <!-- SDD_V4125_FINAL_README_START -->
 ## SDD v4.12.5 final
 
