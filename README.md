@@ -361,3 +361,25 @@ Finalizes already-present ntfy INFO notifications. When an already delivered fil
 The dispatcher now treats Android/browser download suffixes as candidate aliases when the canonical name and content digest match an already completed delivery. A file such as `target-pi3__demo-1.sh` can be reported as `INFO duplicate_alias` instead of being uploaded a second time when `target-pi3__demo.sh` with the same digest is already complete.
 
 The guard keeps Sortify policy `v4115` unchanged and records canonical-name metadata in Sortify release markers. WebUI status exposes `duplicate_alias_guard_enabled`, `duplicate_alias_notify_records`, and `canonical_complete_records`.
+
+## SDD v4.12.6 low-latency watchdog rc1
+This rc1 keeps the v4.12.5 duplicate-alias contract and adds low-latency target ingestion.
+
+Runtime defaults:
+
+```text
+DROP_DISPATCH_FAST_TARGET_WATCHDOG=1
+DROP_DISPATCH_FAST_TARGET_INTERVAL_SECONDS=30
+DROP_DISPATCH_LATENCY_WARN_SECONDS=60
+```
+
+The WebUI/runtime status now exposes:
+
+```text
+fast_target_watchdog_enabled=yes
+fast_target_interval_seconds=30
+latency_warn_seconds=60
+last_delivery_latency_seconds=<seconds>
+```
+
+Goal: productive `target-*__*` drops should be processed by the fast watchdog when the Android/FUSE event watcher misses a file, instead of waiting for the 30 minute fallback rescan.

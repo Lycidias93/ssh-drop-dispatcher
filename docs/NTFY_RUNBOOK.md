@@ -90,3 +90,15 @@ When a fully delivered file reappears in the scan root with the same record and 
 - `INFO duplicate_alias`: the raw filename is a download-suffix alias for an already completed canonical artifact with the same digest; no second upload is expected.
 - `WARN content_changed_same_canonical_name`: the raw filename looks like an alias but has a different digest from an already completed canonical artifact; the dispatcher must not silently upload it.
 - WebUI status should show `duplicate_alias_guard_enabled=yes` when the guard is active.
+
+## Low-latency watchdog rc1 notes
+SDD v4.12.6 rc1 adds a fast target-only watchdog for productive artifacts.
+
+Expected behavior:
+
+```text
+PASS delivered -> normal green delivery
+WARN delivery_latency_sla_breach -> file was processed, but latency exceeded configured threshold
+```
+
+Default latency threshold is `DROP_DISPATCH_LATENCY_WARN_SECONDS=60`. This does not change Sortify policy `v4115` and does not perform host-runs.

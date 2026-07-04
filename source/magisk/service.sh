@@ -19,6 +19,8 @@ COMPLETE_DB=$STATE_DIR/dispatch.complete
 ALREADY_PRESENT_NTFY_DB=$STATE_DIR/dispatch.already-present.ntfy
 DUPLICATE_ALIAS_NTFY_DB=$STATE_DIR/dispatch.duplicate-alias.ntfy
 CANONICAL_COMPLETE_DB=$STATE_DIR/dispatch.canonical.complete
+FAST_TARGET_WATCHDOG_LAST_FILE=$STATE_DIR/.last_fast_target_watchdog
+LAST_DELIVERY_LATENCY_FILE=$STATE_DIR/.last_delivery_latency
 BREAKGLASS_LOG=$STATE_DIR/breakglass.log
 HEALTH_FILE=$STATE_DIR/health.env
 IMPORT_STAMP=$STATE_DIR/.bundle.imported.version
@@ -218,6 +220,9 @@ create_default_config_if_missing(){
     echo "DROP_DISPATCH_FALLBACK_RESCAN_SECONDS=1800"
     echo "DROP_DISPATCH_NOTIFY_ALREADY_PRESENT=1"
     echo "DROP_DISPATCH_DUPLICATE_ALIAS_GUARD=1"
+    echo "DROP_DISPATCH_FAST_TARGET_WATCHDOG=1"
+    echo "DROP_DISPATCH_FAST_TARGET_INTERVAL_SECONDS=30"
+    echo "DROP_DISPATCH_LATENCY_WARN_SECONDS=60"
     echo "DROP_DISPATCH_SCAN_MAX_PASSES=8"
     echo "DROP_DISPATCH_STALE_LOCK_SECONDS=600"
     echo "DROP_DISPATCH_WATCHDOG_SECONDS=60"
@@ -312,6 +317,9 @@ load_config(){
   DROP_DISPATCH_LOG_SKIP_COMPLETE=${DROP_DISPATCH_LOG_SKIP_COMPLETE:-0}
   DROP_DISPATCH_NOTIFY_ALREADY_PRESENT=${DROP_DISPATCH_NOTIFY_ALREADY_PRESENT:-1}
   DROP_DISPATCH_DUPLICATE_ALIAS_GUARD=${DROP_DISPATCH_DUPLICATE_ALIAS_GUARD:-1}
+  DROP_DISPATCH_FAST_TARGET_WATCHDOG=${DROP_DISPATCH_FAST_TARGET_WATCHDOG:-1}
+  DROP_DISPATCH_FAST_TARGET_INTERVAL_SECONDS=${DROP_DISPATCH_FAST_TARGET_INTERVAL_SECONDS:-30}
+  DROP_DISPATCH_LATENCY_WARN_SECONDS=${DROP_DISPATCH_LATENCY_WARN_SECONDS:-60}
   DROP_DISPATCH_SCAN_MAX_PASSES=${DROP_DISPATCH_SCAN_MAX_PASSES:-8}
   DROP_DISPATCH_STALE_LOCK_SECONDS=${DROP_DISPATCH_STALE_LOCK_SECONDS:-600}
   DROP_DISPATCH_WATCHDOG_SECONDS=${DROP_DISPATCH_WATCHDOG_SECONDS:-60}
@@ -441,7 +449,6 @@ handle_duplicate_alias(){
   fi
   if canonical_complete_for_name_targets "$canon" "$targets" || sortify_marker_for_base "$canon"; then
     for t in $targets; do add_quarantine "$rec" "$t" canonical_collision; done
-    log "WARN canonical_collision file=$base canonical=$canon sha256=$sum policy=$PIDD_POLICY_VERSION"
     notify_duplicate_alias_once WARN content_changed_same_canonical_name "$base" "$canon" "$sum" "$targets"
     return 0
   fi
@@ -1286,6 +1293,103 @@ remote_verify_script(){
   esac
 }
 
+# v4.12.6 low-latency target watchdog: fast target-only scan trigger and latency telemetry.
+sdd_now_epoch(){ $DATE_BIN +%s 2>/dev/null || echo 0; }
+
+fast_target_watchdog_enabled(){
+  case "${DROP_DISPATCH_FAST_TARGET_WATCHDOG:-1}" in 1|yes|YES|true|TRUE|on|ON) return 0 ;; *) return 1 ;; esac
+}
+
+fast_target_interval_seconds(){
+  v=$(to_int_or_zero "${DROP_DISPATCH_FAST_TARGET_INTERVAL_SECONDS:-30}")
+  [ "$v" -lt 5 ] 2>/dev/null && v=5
+  [ "$v" -gt 300 ] 2>/dev/null && v=300
+  printf "%s" "$v"
+}
+
+latency_warn_seconds(){
+  v=$(to_int_or_zero "${DROP_DISPATCH_LATENCY_WARN_SECONDS:-60}")
+  [ "$v" -lt 10 ] 2>/dev/null && v=10
+  [ "$v" -gt 3600 ] 2>/dev/null && v=3600
+  printf "%s" "$v"
+}
+
+sleep_interval_seconds(){
+  base=$(to_int_or_zero "${DROP_DISPATCH_WATCHDOG_SECONDS:-60}")
+  [ "$base" -lt 5 ] 2>/dev/null && base=5
+  if fast_target_watchdog_enabled; then
+    fast=$(fast_target_interval_seconds)
+    [ "$fast" -lt "$base" ] 2>/dev/null && base="$fast"
+  fi
+  printf "%s" "$base"
+}
+
+fast_target_candidate_pending(){
+  [ -d "$DROP_DISPATCH_SCAN_DIR" ] || return 1
+  tmp="$STATE_DIR/.fast-target-candidates.$$"
+  $FIND_BIN "$DROP_DISPATCH_SCAN_DIR" -maxdepth 1 -type f \( -name 'target-*__*' -o -name 'targets-*__*' \) > "$tmp" 2>/dev/null || true
+  while IFS= read -r f || [ -n "$f" ]; do
+    [ -f "$f" ] || continue
+    b=$($BASENAME_BIN "$f")
+    is_partial "$b" && continue
+    is_sidecar "$b" && continue
+    is_supported "$b" || continue
+    targets=$(targets_for "$b")
+    [ -n "$targets" ] || continue
+    rec=$(record "$f")
+    complete_recorded "$rec" && continue
+    fully_done_or_blocked "$rec" "$targets" && continue
+    $RM_BIN -f "$tmp" >/dev/null 2>&1 || true
+    printf "%s" "$b"
+    return 0
+  done < "$tmp"
+  $RM_BIN -f "$tmp" >/dev/null 2>&1 || true
+  return 1
+}
+
+fast_target_watchdog(){
+  fast_target_watchdog_enabled || return 0
+  now=$(sdd_now_epoch)
+  last=0
+  [ -f "$FAST_TARGET_WATCHDOG_LAST_FILE" ] && last=$($CAT_BIN "$FAST_TARGET_WATCHDOG_LAST_FILE" 2>/dev/null || echo 0)
+  interval=$(fast_target_interval_seconds)
+  age=$((now - last))
+  [ "$last" -gt 0 ] 2>/dev/null || age=$interval
+  [ "$age" -lt "$interval" ] 2>/dev/null && return 0
+  echo "$now" > "$FAST_TARGET_WATCHDOG_LAST_FILE" 2>/dev/null || true
+  pending=$(fast_target_candidate_pending 2>/dev/null || true)
+  if [ -n "$pending" ]; then
+    log "INFO fast_target_watchdog_trigger file=$pending age_seconds=$age interval_seconds=$interval"
+    ensure_ssh_ready || return 0
+    scan_once fast_target_watchdog
+  fi
+  return 0
+}
+
+record_delivery_latency(){
+  file="$1"; base="$2"; phase="$3"
+  now=$(sdd_now_epoch)
+  mtime=$(file_mtime_epoch "$file" 2>/dev/null || echo 0)
+  mtime=$(to_int_or_zero "$mtime")
+  latency=$((now - mtime))
+  [ "$latency" -lt 0 ] 2>/dev/null && latency=0
+  warn=$(latency_warn_seconds)
+  {
+    printf "file=%s\n" "$base"
+    printf "phase=%s\n" "$phase"
+    printf "file_mtime_epoch=%s\n" "$mtime"
+    printf "event_epoch=%s\n" "$now"
+    printf "delivery_latency_seconds=%s\n" "$latency"
+    printf "latency_warn_seconds=%s\n" "$warn"
+    printf "updated_at=%s\n" "$($DATE_BIN '+%F %T' 2>/dev/null || echo now)"
+  } > "$LAST_DELIVERY_LATENCY_FILE" 2>/dev/null || true
+  if [ "$latency" -gt "$warn" ] 2>/dev/null; then
+    log "WARN delivery_latency_sla_breach file=$base phase=$phase file_mtime=$mtime latency_seconds=$latency warn_seconds=$warn policy=$PIDD_POLICY_VERSION"
+  else
+    log "INFO delivery_latency file=$base phase=$phase file_mtime=$mtime latency_seconds=$latency warn_seconds=$warn policy=$PIDD_POLICY_VERSION"
+  fi
+}
+
 fully_done_or_blocked(){
   rec="$1"; targets="$2"
   all_done=1
@@ -1309,6 +1413,7 @@ process_file(){
   rec=$(record "$file")
   targets=$(targets_for "$base")
   [ -n "$targets" ] || return 0
+  record_delivery_latency "$file" "$base" process_start
   if handle_duplicate_alias "$file" "$rec" "$targets"; then return 0; fi
 
   if complete_recorded "$rec"; then
@@ -1577,6 +1682,11 @@ webui_status(){
   echo "ntfy_token_file_configured=$([ -n "${NTFY_TOKEN_FILE:-}" ] && echo yes || echo no)"
   case "${DROP_DISPATCH_NOTIFY_ALREADY_PRESENT:-1}" in 1|yes|YES|true|TRUE|on|ON) echo "already_present_notify_enabled=yes" ;; *) echo "already_present_notify_enabled=no" ;; esac
   case "${DROP_DISPATCH_DUPLICATE_ALIAS_GUARD:-1}" in 1|yes|YES|true|TRUE|on|ON) echo "duplicate_alias_guard_enabled=yes" ;; *) echo "duplicate_alias_guard_enabled=no" ;; esac
+  case "${DROP_DISPATCH_FAST_TARGET_WATCHDOG:-1}" in 1|yes|YES|true|TRUE|on|ON) echo "fast_target_watchdog_enabled=yes" ;; *) echo "fast_target_watchdog_enabled=no" ;; esac
+  echo "fast_target_interval_seconds=$(fast_target_interval_seconds)"
+  echo "latency_warn_seconds=$(latency_warn_seconds)"
+  echo "last_fast_target_watchdog_epoch=$([ -f "$FAST_TARGET_WATCHDOG_LAST_FILE" ] && $CAT_BIN "$FAST_TARGET_WATCHDOG_LAST_FILE" 2>/dev/null || echo none)"
+  if [ -f "$LAST_DELIVERY_LATENCY_FILE" ]; then $CAT_BIN "$LAST_DELIVERY_LATENCY_FILE" 2>/dev/null | $SED_BIN 's/^/last_/' || true; else echo "last_delivery_latency_seconds=none"; fi
   echo "duplicate_alias_notify_records=$($WC_BIN -l < "$DUPLICATE_ALIAS_NTFY_DB" 2>/dev/null | $TR_BIN -d " " 2>/dev/null || echo 0)"
   echo "canonical_complete_records=$($WC_BIN -l < "$CANONICAL_COMPLETE_DB" 2>/dev/null | $TR_BIN -d " " 2>/dev/null || echo 0)"
   echo "== tools =="
@@ -1673,6 +1783,9 @@ runtime_status(){
   echo "berylax_max_artifact_kb=${REMOTE_MAX_ARTIFACT_KB_berylax:-20480}"
   echo "space_probe_retries=${REMOTE_SPACE_PROBE_RETRIES:-3}"
   echo "space_probe_retry_sleep=${REMOTE_SPACE_PROBE_RETRY_SLEEP:-1}"
+  echo "fast_target_watchdog_enabled=${DROP_DISPATCH_FAST_TARGET_WATCHDOG:-1}"
+  echo "fast_target_interval_seconds=$(fast_target_interval_seconds)"
+  echo "latency_warn_seconds=$(latency_warn_seconds)"
   echo "== tools =="
   for x in dispatch-config.sh pidd-config.sh pidd-doctor.sh pidd-health.sh pidd-migrate-config.sh; do
     [ -x "$TOOLS_DIR/$x" ] && echo "$x=ok" || echo "$x=missing"
@@ -1709,7 +1822,7 @@ requeue_file(){
 write_handler(){
   cat > "$HANDLER_SCRIPT" <<HANDLER_EOF
 #!/system/bin/sh
-printf '%s\n' "event" > /data/adb/ssh-drop-dispatcher/.last_event 2>/dev/null || true
+/system/bin/date +%s > /data/adb/ssh-drop-dispatcher/.last_event 2>/dev/null || printf '%s\n' "event" > /data/adb/ssh-drop-dispatcher/.last_event 2>/dev/null || true
 /data/adb/modules/ssh_drop_dispatcher/service.sh --scan-once inotify_event >/dev/null 2>&1 &
 exit 0
 HANDLER_EOF
@@ -1766,8 +1879,9 @@ watchdog_loop(){
       schedule_followup
     fi
     stale_lock_guard
+    fast_target_watchdog
     health OK watchdog
-    $SLEEP_BIN "${DROP_DISPATCH_WATCHDOG_SECONDS:-60}"
+    $SLEEP_BIN "$(sleep_interval_seconds)"
   done
 }
 

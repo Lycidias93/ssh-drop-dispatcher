@@ -238,3 +238,9 @@
 - Keeps Sortify policy `v4115` unchanged while adding canonical-name metadata to release markers.
 - Adds WebUI status fields for duplicate-alias guard and canonical-complete counters.
 - No host-run, DNS, HA, VIP, route, MagicDNS or subnet-route change.
+
+## 2026-07-04 - SDD v4.12.6 low-latency watchdog rc1
+- Adds a fast target-only watchdog for `target-*__*` and `targets-*__*` artifacts so productive drops no longer wait for the long fallback rescan when Android/FUSE watcher events are missed.
+- Adds delivery latency telemetry with `delivery_latency_seconds`, `fast_target_watchdog_enabled`, `fast_target_interval_seconds`, and `latency_warn_seconds`.
+- Reduces repeated canonical-collision WARN noise by keeping first WARN/ntfy behavior and suppressing repeats.
+- Sortify marker policy remains `v4115`; no host-run, DNS, HA, VIP or route changes.
