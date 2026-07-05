@@ -383,3 +383,9 @@ last_delivery_latency_seconds=<seconds>
 ```
 
 Goal: productive `target-*__*` drops should be processed by the fast watchdog when the Android/FUSE event watcher misses a file, instead of waiting for the 30 minute fallback rescan.
+
+### rc2 target-only watchdog update
+
+rc2 changes the fast watchdog from a trigger for the full Download scan to a target-only processing path. This avoids old completed or collision-test files delaying productive `target-*__*` drops when Android/FUSE events are missed.
+
+Expected smoke behavior: `fast_target_watchdog_trigger` should be followed by `START ... mode=target_only`, then `PROCESS` for the new target artifact without waiting for a full directory scan.
