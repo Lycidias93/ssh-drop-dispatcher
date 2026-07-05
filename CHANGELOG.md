@@ -244,3 +244,9 @@
 - Adds delivery latency telemetry with `delivery_latency_seconds`, `fast_target_watchdog_enabled`, `fast_target_interval_seconds`, and `latency_warn_seconds`.
 - Reduces repeated canonical-collision WARN noise by keeping first WARN/ntfy behavior and suppressing repeats.
 - Sortify marker policy remains `v4115`; no host-run, DNS, HA, VIP or route changes.
+
+## 2026-07-05 - SDD v4.12.6 low-latency watchdog rc2
+- Changes the fast watchdog from a trigger for the full Download scan to a target-only processing path for `target-*__*` and `targets-*__*` artifacts.
+- Keeps latency telemetry and WebUI/runtime status fields from rc1.
+- Fixes the duplicated installer print text from rc1.
+- Sortify marker policy remains `v4115`; no host-run, DNS, HA, VIP or route changes.

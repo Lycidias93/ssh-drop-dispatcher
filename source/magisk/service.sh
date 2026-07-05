@@ -1294,6 +1294,7 @@ remote_verify_script(){
 }
 
 # v4.12.6 low-latency target watchdog: fast target-only scan trigger and latency telemetry.
+# rc2: watchdog uses a target-only processing path instead of a full Download scan.
 sdd_now_epoch(){ $DATE_BIN +%s 2>/dev/null || echo 0; }
 
 fast_target_watchdog_enabled(){
@@ -1347,6 +1348,63 @@ fast_target_candidate_pending(){
   return 1
 }
 
+fast_target_scan_once(){
+  reason="${1:-fast_target_watchdog}"
+  dispatcher_enabled || { log "SKIP disabled reason=$reason mode=target_only"; health WARN disabled; return 0; }
+  if ! $MKDIR_BIN "$SCAN_LOCKDIR" >/dev/null 2>&1; then
+    log "SKIP scan_locked reason=$reason mode=target_only"
+    echo "1" > "$EVENT_PENDING_FILE"
+    health WARN scan_locked
+    schedule_followup
+    return 0
+  fi
+  now_epoch=$(sdd_now_epoch)
+  echo "$now_epoch" > "$SCAN_LOCK_TS" 2>/dev/null || true
+  echo "$now_epoch" > "$LAST_SCAN_FILE" 2>/dev/null || true
+  $RM_BIN -f "$EVENT_PENDING_FILE" >/dev/null 2>&1 || true
+  trap "$RM_BIN -rf "$SCAN_LOCKDIR" "$SCAN_LOCK_TS" "$TMP_SCAN_LIST" "$TMP_PENDING_LIST" >/dev/null 2>&1 || true" 0 1 2 3 15
+
+  log "START scan_dir=$DROP_DISPATCH_SCAN_DIR reason=$reason mode=target_only"
+  $SLEEP_BIN "$DROP_DISPATCH_SETTLE_SECONDS"
+
+  pass=1
+  total_processed=0
+  max_passes=${DROP_DISPATCH_SCAN_MAX_PASSES:-8}
+  while [ "$pass" -le "$max_passes" ]; do
+    : > "$TMP_SCAN_LIST"
+    $FIND_BIN "$DROP_DISPATCH_SCAN_DIR" -maxdepth 1 -type f -name 'target-*__*' >> "$TMP_SCAN_LIST" 2>/dev/null || true
+    $FIND_BIN "$DROP_DISPATCH_SCAN_DIR" -maxdepth 1 -type f -name 'targets-*__*' >> "$TMP_SCAN_LIST" 2>/dev/null || true
+    : > "$TMP_PENDING_LIST"
+
+    while IFS= read -r f || [ -n "$f" ]; do
+      queue_candidate "$f"
+    done < "$TMP_SCAN_LIST"
+
+    pending_count=$($WC_BIN -l < "$TMP_PENDING_LIST" 2>/dev/null | $TR_BIN -d " " 2>/dev/null)
+    [ -n "$pending_count" ] || pending_count=0
+    log "QUEUE pass=$pass pending=$pending_count reason=$reason mode=target_only"
+    [ "$pending_count" = "0" ] && break
+
+    processed_count=0
+    while IFS= read -r f || [ -n "$f" ]; do
+      [ -f "$f" ] || continue
+      b=$($BASENAME_BIN "$f")
+      log "PROCESS pass=$pass file=$b"
+      process_file "$f"
+      processed_count=$((processed_count+1))
+      total_processed=$((total_processed+1))
+    done < "$TMP_PENDING_LIST"
+
+    [ "$processed_count" = "0" ] && break
+    pass=$((pass+1))
+  done
+
+  log "END passes=$pass processed=$total_processed reason=$reason mode=target_only"
+  health OK "$reason"
+  $RM_BIN -rf "$SCAN_LOCKDIR" "$SCAN_LOCK_TS" "$TMP_SCAN_LIST" "$TMP_PENDING_LIST" >/dev/null 2>&1 || true
+  trap - 0 1 2 3 15
+}
+
 fast_target_watchdog(){
   fast_target_watchdog_enabled || return 0
   now=$(sdd_now_epoch)
@@ -1359,9 +1417,9 @@ fast_target_watchdog(){
   echo "$now" > "$FAST_TARGET_WATCHDOG_LAST_FILE" 2>/dev/null || true
   pending=$(fast_target_candidate_pending 2>/dev/null || true)
   if [ -n "$pending" ]; then
-    log "INFO fast_target_watchdog_trigger file=$pending age_seconds=$age interval_seconds=$interval"
+    log "INFO fast_target_watchdog_trigger file=$pending age_seconds=$age interval_seconds=$interval mode=target_only"
     ensure_ssh_ready || return 0
-    scan_once fast_target_watchdog
+    fast_target_scan_once fast_target_watchdog
   fi
   return 0
 }

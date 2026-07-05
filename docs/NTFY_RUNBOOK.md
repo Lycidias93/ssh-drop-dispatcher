@@ -102,3 +102,7 @@ WARN delivery_latency_sla_breach -> file was processed, but latency exceeded con
 ```
 
 Default latency threshold is `DROP_DISPATCH_LATENCY_WARN_SECONDS=60`. This does not change Sortify policy `v4115` and does not perform host-runs.
+
+### rc2 target-only watchdog note
+
+rc2 keeps the same ntfy semantics as rc1. The implementation change is operational: the fast watchdog now runs a target-only processing path, so old completed/collision artifacts should not delay new productive target drops.
