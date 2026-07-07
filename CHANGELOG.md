@@ -250,3 +250,10 @@
 - Keeps latency telemetry and WebUI/runtime status fields from rc1.
 - Fixes the duplicated installer print text from rc1.
 - Sortify marker policy remains `v4115`; no host-run, DNS, HA, VIP or route changes.
+
+## 2026-07-07 - SDD v4.12.6 final
+- Promotes the rc2 low-latency target-only watchdog after post-reboot runtime verification and latency smoke.
+- Final smoke proof: target-only trigger PASS, target-only scan log PASS, automatic delivery PASS, measured delivery latency 37s, WebUI latency telemetry PASS.
+- Publishes final `version=4.12.6`, `versionCode=4126003`, and `ssh-drop-dispatcher-magisk-v4.12.6.zip` update metadata.
+- Overhauls `README.md` around the v4.12.6 final contract, using a problem/fix/verified/operate/troubleshoot structure.
+- Sortify marker policy remains `v4115`; no host-run, DNS, HA, VIP or route changes.
