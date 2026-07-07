@@ -1294,7 +1294,7 @@ remote_verify_script(){
 }
 
 # v4.12.6 low-latency target watchdog: fast target-only scan trigger and latency telemetry.
-# rc2: watchdog uses a target-only processing path instead of a full Download scan.
+# v4.12.6 final: watchdog uses a target-only processing path instead of a full Download scan.
 sdd_now_epoch(){ $DATE_BIN +%s 2>/dev/null || echo 0; }
 
 fast_target_watchdog_enabled(){

@@ -106,3 +106,18 @@ Default latency threshold is `DROP_DISPATCH_LATENCY_WARN_SECONDS=60`. This does 
 ### rc2 target-only watchdog note
 
 rc2 keeps the same ntfy semantics as rc1. The implementation change is operational: the fast watchdog now runs a target-only processing path, so old completed/collision artifacts should not delay new productive target drops.
+
+## v4.12.6 final low-latency note
+
+Final v4.12.6 promotes the rc2 target-only watchdog. Delivery notifications keep the same compact ntfy format, but latency diagnostics can now prove whether a missed Android/FUSE event was recovered by the fast target-only path.
+
+Expected useful log sequence:
+
+```text
+INFO fast_target_watchdog_trigger ... mode=target_only
+PROCESS pass=1 file=target-...__...
+INFO delivery_latency ... latency_seconds=<n>
+NTFY_SENT status=PASS ... reason=delivered
+```
+
+A `WARN delivery_latency_sla_breach` is diagnostic. It does not imply host execution and does not change Sortify policy `v4115`.
