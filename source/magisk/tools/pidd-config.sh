@@ -35,9 +35,10 @@ list_targets(){
   if [ -d "$TARGETS_DIR" ]; then
     for cf in "$TARGETS_DIR"/*.conf; do
       [ -f "$cf" ] || continue
-      target_name= enabled=1 ssh_host= remote_drop= platform= shell_kind= verify_kind= critical_role=
+      target_name= enabled=1 ssh_host= remote_drop= platform= shell= critical_role= scp_flags=
       . "$cf"
-      printf "%s enabled=%s host=%s remote_drop=%s platform=%s shell=%s verify=%s role=%s source=%s\n" "$target_name" "$enabled" "$ssh_host" "$remote_drop" "$platform" "$shell_kind" "$verify_kind" "$critical_role" "$cf"
+      printf "%s enabled=%s host=%s remote_drop=%s platform=%s shell=%s scp_flags=%s verify_owner=dispatcher external_verify_wrapper=no role=%s source=%s\n" \
+        "$target_name" "$enabled" "$ssh_host" "$remote_drop" "$platform" "${shell:-missing}" "${scp_flags:-}" "$critical_role" "$cf"
     done
   else
     echo "missing targets_dir=$TARGETS_DIR"
@@ -50,17 +51,24 @@ lint_targets(){
   seen=" "
   for cf in "$TARGETS_DIR"/*.conf; do
     [ -f "$cf" ] || continue
-    target_name= enabled=1 ssh_host= remote_drop= shell_kind=
+    if grep -Eq '^(verify|verify_cmd|verify_kind|shell_kind)=' "$cf" 2>/dev/null; then
+      echo "FAIL legacy_verify_or_shell_key file=$cf verify_owner=dispatcher external_verify_wrapper=no"
+      rc=1
+    fi
+    target_name= enabled=1 ssh_host= remote_drop= shell=
     . "$cf"
     t=$(lower_name "$target_name")
-    case "$t" in ""|*[!a-z0-9_]*) echo "FAIL invalid target_name file=$cf value=$target_name"; rc=1; continue;; esac
+    case "$t" in
+      "") echo "FAIL missing target_name file=$cf"; rc=1; continue ;;
+      *[!a-z0-9_]*) echo "FAIL invalid target_name file=$cf value=$target_name"; rc=1; continue ;;
+    esac
     case "$seen" in *" $t "*) echo "FAIL duplicate target=$t file=$cf"; rc=1;; *) seen="$seen$t ";; esac
     [ "$enabled" = "0" ] || [ "$enabled" = "1" ] || { echo "FAIL invalid enabled target=$t value=$enabled"; rc=1; }
     [ -n "$ssh_host" ] || { echo "FAIL missing ssh_host target=$t"; rc=1; }
     [ -n "$remote_drop" ] || { echo "FAIL missing remote_drop target=$t"; rc=1; }
-    case "$shell_kind" in bash|sh|"") ;; *) echo "FAIL invalid shell_kind target=$t value=$shell_kind"; rc=1;; esac
+    case "$shell" in bash|sh) ;; "") echo "FAIL missing explicit shell target=$t"; rc=1;; *) echo "FAIL invalid shell target=$t value=$shell"; rc=1;; esac
   done
-  [ "$rc" = "0" ] && echo "lint=ok"
+  [ "$rc" = "0" ] && echo "lint=ok verify_owner=dispatcher external_verify_wrapper=no"
   return "$rc"
 }
 
@@ -96,9 +104,9 @@ dry_run(){
   load_legacy
   for t in $targets; do
     if [ -f "$TARGETS_DIR/$t.conf" ]; then
-      target_name= enabled=1 ssh_host= remote_drop=
+      target_name= enabled=1 ssh_host= remote_drop= shell=
       . "$TARGETS_DIR/$t.conf"
-      echo "$t host=$ssh_host remote_drop=$remote_drop source=registry"
+      echo "$t host=$ssh_host remote_drop=$remote_drop shell=${shell:-missing} verify_owner=dispatcher external_verify_wrapper=no source=registry"
     else
       eval "h=\${HOST_$t:-}"
       eval "d=\${REMOTE_DIR_$t:-}"
@@ -119,6 +127,7 @@ migrate_dry_run(){
     echo "enabled=\"1\""
     echo "ssh_host=\"$h\""
     echo "remote_drop=\"$d\""
+    echo "shell=\"bash\""
   done
 }
 
