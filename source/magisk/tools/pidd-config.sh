@@ -35,9 +35,10 @@ list_targets(){
   if [ -d "$TARGETS_DIR" ]; then
     for cf in "$TARGETS_DIR"/*.conf; do
       [ -f "$cf" ] || continue
-      target_name= enabled=1 ssh_host= remote_drop= platform= shell_kind= verify_kind= critical_role=
+      target_name= enabled=1 ssh_host= remote_drop= platform= shell= critical_role= scp_flags=
       . "$cf"
-      printf "%s enabled=%s host=%s remote_drop=%s platform=%s shell=%s verify=%s role=%s source=%s\n" "$target_name" "$enabled" "$ssh_host" "$remote_drop" "$platform" "$shell_kind" "$verify_kind" "$critical_role" "$cf"
+      printf "%s enabled=%s host=%s remote_drop=%s platform=%s shell=%s scp_flags=%s verify_owner=dispatcher external_verify_wrapper=no role=%s source=%s\n" \
+        "$target_name" "$enabled" "$ssh_host" "$remote_drop" "$platform" "${shell:-missing}" "${scp_flags:-}" "$critical_role" "$cf"
     done
   else
     echo "missing targets_dir=$TARGETS_DIR"
@@ -103,9 +104,9 @@ dry_run(){
   load_legacy
   for t in $targets; do
     if [ -f "$TARGETS_DIR/$t.conf" ]; then
-      target_name= enabled=1 ssh_host= remote_drop=
+      target_name= enabled=1 ssh_host= remote_drop= shell=
       . "$TARGETS_DIR/$t.conf"
-      echo "$t host=$ssh_host remote_drop=$remote_drop source=registry"
+      echo "$t host=$ssh_host remote_drop=$remote_drop shell=${shell:-missing} verify_owner=dispatcher external_verify_wrapper=no source=registry"
     else
       eval "h=\${HOST_$t:-}"
       eval "d=\${REMOTE_DIR_$t:-}"
@@ -126,6 +127,7 @@ migrate_dry_run(){
     echo "enabled=\"1\""
     echo "ssh_host=\"$h\""
     echo "remote_drop=\"$d\""
+    echo "shell=\"bash\""
   done
 }
 
