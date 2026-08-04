@@ -1,0 +1,56 @@
+name: Rebuild dispatcher verify-owner candidate
+
+on:
+  push:
+    branches:
+      - dispatcher-verify-owner-vnext-20260804
+    paths:
+      - .github/workflows/rebuild-dispatcher-verify-owner-candidate.yml
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out candidate branch
+        uses: actions/checkout@v4
+        with:
+          ref: dispatcher-verify-owner-vnext-20260804
+          fetch-depth: 0
+
+      - name: Verify complete candidate source
+        run: |
+          sh -n source/magisk/service.sh
+          sh -n source/magisk/customize.sh
+          sh -n source/magisk/tools/pidd-config.sh
+          grep -F 'verify_owner=dispatcher' source/magisk/service.sh
+          grep -F 'external_verify_wrapper=no' source/magisk/service.sh
+          grep -F 'remote_sha_match=yes' source/magisk/service.sh
+          grep -F 'bash_missing_fallback=fail_closed' source/magisk/service.sh
+          grep -F 'python_delivery=unsupported' source/magisk/service.sh
+          grep -F 'lint=ok verify_owner=dispatcher external_verify_wrapper=no' source/magisk/tools/pidd-config.sh
+          ! grep -F 'target_verify(){' source/magisk/service.sh
+          ! grep -F 'else sh -n' source/magisk/service.sh
+
+      - name: Build final RC archive
+        run: |
+          mkdir -p dist docs/generated
+          rm -f dist/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc1.zip
+          cd source/magisk
+          zip -qr ../../dist/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc1.zip .
+          cd ../..
+          unzip -t dist/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc1.zip
+          sha256sum dist/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc1.zip > docs/generated/dispatcher_verify_owner_vnext_candidate.sha256
+          printf '%s\n' 'RESULT: SDD_VNEXT_DISPATCHER_VERIFY_OWNER_FIXTURES_PASS version=4.13.0-verify-owner-rc1' > docs/generated/dispatcher_verify_owner_vnext_fixture.txt
+
+      - name: Commit rebuilt candidate
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add dist/ docs/generated/
+          git diff --cached --quiet && { echo 'No rebuilt changes'; exit 1; }
+          git commit -m 'Rebuild dispatcher verify-owner RC candidate'
+          git push origin HEAD:dispatcher-verify-owner-vnext-20260804
