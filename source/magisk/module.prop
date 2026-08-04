@@ -1,7 +1,7 @@
 id=ssh_drop_dispatcher
 name=SSH Drop Dispatcher
-version=4.12.6
-versionCode=4126003
+version=4.13.0-verify-owner-rc1
+versionCode=4130001
 author=Lycidias93
-description=Android/Magisk SSH file-drop dispatcher with WebUI controls, ntfy delivery notifications, delivery-status/wait diagnostics, delivery-safety target checks, break-glass SCP, duplicate-alias guard, strict target-prefix routing, legacy SCP target flags, dispatch-now and Sortify marker contract
+description=Android/Magisk SSH file-drop dispatcher with dispatcher-owned remote syntax verification, strict shell profiles, fail-closed Bash handling, normal-path SHA-256 parity, WebUI controls, ntfy notifications, delivery safety, break-glass SCP and Sortify marker contract
 updateJson=https://raw.githubusercontent.com/Lycidias93/ssh-drop-dispatcher/main/update.json

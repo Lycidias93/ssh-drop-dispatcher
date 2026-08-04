@@ -50,17 +50,24 @@ lint_targets(){
   seen=" "
   for cf in "$TARGETS_DIR"/*.conf; do
     [ -f "$cf" ] || continue
-    target_name= enabled=1 ssh_host= remote_drop= shell_kind=
+    if grep -Eq '^(verify|verify_cmd|verify_kind|shell_kind)=' "$cf" 2>/dev/null; then
+      echo "FAIL legacy_verify_or_shell_key file=$cf verify_owner=dispatcher external_verify_wrapper=no"
+      rc=1
+    fi
+    target_name= enabled=1 ssh_host= remote_drop= shell=
     . "$cf"
     t=$(lower_name "$target_name")
-    case "$t" in ""|*[!a-z0-9_]*) echo "FAIL invalid target_name file=$cf value=$target_name"; rc=1; continue;; esac
+    case "$t" in
+      "") echo "FAIL missing target_name file=$cf"; rc=1; continue ;;
+      *[!a-z0-9_]*) echo "FAIL invalid target_name file=$cf value=$target_name"; rc=1; continue ;;
+    esac
     case "$seen" in *" $t "*) echo "FAIL duplicate target=$t file=$cf"; rc=1;; *) seen="$seen$t ";; esac
     [ "$enabled" = "0" ] || [ "$enabled" = "1" ] || { echo "FAIL invalid enabled target=$t value=$enabled"; rc=1; }
     [ -n "$ssh_host" ] || { echo "FAIL missing ssh_host target=$t"; rc=1; }
     [ -n "$remote_drop" ] || { echo "FAIL missing remote_drop target=$t"; rc=1; }
-    case "$shell_kind" in bash|sh|"") ;; *) echo "FAIL invalid shell_kind target=$t value=$shell_kind"; rc=1;; esac
+    case "$shell" in bash|sh) ;; "") echo "FAIL missing explicit shell target=$t"; rc=1;; *) echo "FAIL invalid shell target=$t value=$shell"; rc=1;; esac
   done
-  [ "$rc" = "0" ] && echo "lint=ok"
+  [ "$rc" = "0" ] && echo "lint=ok verify_owner=dispatcher external_verify_wrapper=no"
   return "$rc"
 }
 

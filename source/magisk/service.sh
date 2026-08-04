@@ -23,6 +23,8 @@ FAST_TARGET_WATCHDOG_LAST_FILE=$STATE_DIR/.last_fast_target_watchdog
 LAST_DELIVERY_LATENCY_FILE=$STATE_DIR/.last_delivery_latency
 BREAKGLASS_LOG=$STATE_DIR/breakglass.log
 HEALTH_FILE=$STATE_DIR/health.env
+VERIFY_OWNER_FILE=$STATE_DIR/verification-owner.env
+VERIFY_OWNER_POLICY=sdd-v4.13.0-verify-owner-v1
 IMPORT_STAMP=$STATE_DIR/.bundle.imported.version
 BUNDLE_DIR=/storage/emulated/0/PixelDropDispatch/main-bundle
 BUNDLE_VERSION_FILE=$BUNDLE_DIR/bundle.version
@@ -133,34 +135,38 @@ load_target_registry(){
   [ -d "$TARGETS_DIR" ] || return 0
   for cf in "$TARGETS_DIR"/*.conf; do
     [ -f "$cf" ] || continue
+    if $GREP_BIN -Eq "^(verify|verify_cmd|verify_kind)=" "$cf" 2>/dev/null; then
+      log "FAIL target_registry legacy_verify_key file=$cf verify_owner=dispatcher external_verify_wrapper=no"
+      return 1
+    fi
     target_name=
     enabled=1
     ssh_host=
     remote_drop=
     platform=
     shell=
-    verify=
     scp_flags=
     . "$cf"
     target_name=$(lower_name "$target_name")
-    case "$target_name" in ""|*[!a-z0-9_]*) log "WARN target_registry invalid_name file=$cf"; continue;; esac
+    case "$target_name" in
+      "") log "FAIL target_registry missing_name file=$cf"; return 1 ;;
+      *[!a-z0-9_]*) log "FAIL target_registry invalid_name file=$cf"; return 1 ;;
+    esac
     [ "${enabled:-1}" = "1" ] || continue
+    case "${shell:-}" in
+      sh|bash) ;;
+      "") log "FAIL target_registry missing_explicit_shell target=$target_name file=$cf"; return 1 ;;
+      *) log "FAIL target_registry invalid_shell target=$target_name shell=${shell:-} file=$cf"; return 1 ;;
+    esac
     append_active_target "$target_name"
     [ -n "${ssh_host:-}" ] && set_dynamic_var "HOST_$target_name" "$ssh_host"
     [ -n "${remote_drop:-}" ] && set_dynamic_var "REMOTE_DIR_$target_name" "$remote_drop"
-    if [ -z "${shell:-}" ]; then
-      case "${platform:-}" in openwrt|busybox|ash) shell=sh ;; *) shell=bash ;; esac
-    fi
-    case "$shell" in sh|bash) ;; *) shell=bash ;; esac
     set_dynamic_var "SHELL_$target_name" "$shell"
-    if [ -n "${verify:-}" ]; then
-      set_dynamic_var "VERIFY_$target_name" "$verify"
-    fi
     if [ -z "${scp_flags:-}" ] && [ "$target_name" = "berylax" ]; then
       scp_flags="-O"
     fi
     if [ -n "${scp_flags:-}" ]; then
-      printf "%s" "$scp_flags" | $GREP_BIN -Eq "^[A-Za-z0-9_ .:=,/@+-]*$" || { log "WARN target_registry invalid_scp_flags target=$target_name"; scp_flags=""; }
+      printf "%s" "$scp_flags" | $GREP_BIN -Eq "^[A-Za-z0-9_ .:=,/@+-]*$" || { log "FAIL target_registry invalid_scp_flags target=$target_name"; return 1; }
     fi
     [ -n "${scp_flags:-}" ] && set_dynamic_var "SCP_FLAGS_$target_name" "$scp_flags"
   done
@@ -176,11 +182,12 @@ registry_summary(){
       enabled=1
       ssh_host=
       remote_drop=
+      shell=
       scp_flags=
       . "$cf"
       t_l=$(lower_name "${target_name:-}")
       [ -z "${scp_flags:-}" ] && [ "$t_l" = "berylax" ] && scp_flags="-O"
-      printf "%s enabled=%s host=%s remote_drop=%s scp_flags=%s\n" "$target_name" "${enabled:-1}" "${ssh_host:-}" "${remote_drop:-}" "${scp_flags:-}"
+      printf "%s enabled=%s host=%s remote_drop=%s shell=%s scp_flags=%s verify_owner=dispatcher external_verify_wrapper=no\n" "$target_name" "${enabled:-1}" "${ssh_host:-}" "${remote_drop:-}" "${shell:-missing}" "${scp_flags:-}"
     done
   else
     echo "missing targets_dir=$TARGETS_DIR"
@@ -257,6 +264,75 @@ create_default_config_if_missing(){
   $CHMOD_BIN 600 "$CONFIG_FILE" >/dev/null 2>&1 || true
 }
 
+
+verify_owner_strip_quotes(){
+  printf "%s" "$1" | $SED_BIN "s/^[\"']*//;s/[\"']*$//"
+}
+
+verify_owner_resolve_shell(){
+  cf="$1"
+  target_name=
+  platform=
+  shell=
+  shell_kind=
+  . "$cf"
+  resolved="${shell:-${shell_kind:-}}"
+  case "$resolved" in sh|bash) printf "%s" "$resolved"; return 0;; esac
+  t=$(lower_name "$(verify_owner_strip_quotes "${target_name:-}")")
+  p=$(lower_name "$(verify_owner_strip_quotes "${platform:-}")")
+  case "$t:$p" in
+    berylax:*|*:openwrt|*:busybox|*:ash) printf "sh" ;;
+    *) printf "bash" ;;
+  esac
+}
+
+write_verify_owner_marker(){
+  tmp="$VERIFY_OWNER_FILE.tmp.$$"
+  {
+    echo "verify_owner=dispatcher"
+    echo "external_verify_wrapper=no"
+    echo "remote_sha_required=yes"
+    echo "bash_missing_fallback=fail_closed"
+    echo "python_delivery=unsupported"
+    echo "policy=$VERIFY_OWNER_POLICY"
+  } > "$tmp" || return 1
+  $CHMOD_BIN 600 "$tmp" >/dev/null 2>&1 || true
+  $MV_BIN -f "$tmp" "$VERIFY_OWNER_FILE" >/dev/null 2>&1 || return 1
+}
+
+migrate_verify_owner_runtime(){
+  $MKDIR_BIN -p "$STATE_DIR/backups" "$TARGETS_DIR" >/dev/null 2>&1 || return 1
+  ts=$($DATE_BIN +%Y%m%d-%H%M%S 2>/dev/null || echo now)
+  backup_dir="$STATE_DIR/backups/verify-owner-$ts"
+  changed=0
+  for cf in "$TARGETS_DIR"/*.conf; do
+    [ -f "$cf" ] || continue
+    shell_value=$(verify_owner_resolve_shell "$cf") || return 1
+    case "$shell_value" in sh|bash) ;; *) log "FAIL verify_owner_migration unresolved_shell file=$cf"; return 1;; esac
+    needs_change=0
+    $GREP_BIN -Eq "^(verify|verify_cmd|verify_kind|shell_kind)=" "$cf" 2>/dev/null && needs_change=1
+    $GREP_BIN -Eq "^shell=(\"?)(sh|bash)(\"?)$" "$cf" 2>/dev/null || needs_change=1
+    [ "$needs_change" = "1" ] || continue
+    [ "$changed" = "1" ] || { $MKDIR_BIN -p "$backup_dir" >/dev/null 2>&1 || return 1; changed=1; }
+    bn=$($BASENAME_BIN "$cf")
+    $CP_BIN -f "$cf" "$backup_dir/$bn" >/dev/null 2>&1 || return 1
+    tmp="$cf.verify-owner.$$"
+    $GREP_BIN -v -E "^(verify|verify_cmd|verify_kind|shell_kind|shell)=" "$cf" > "$tmp" 2>/dev/null || true
+    printf "shell=\"%s\"\n" "$shell_value" >> "$tmp"
+    $CHMOD_BIN 600 "$tmp" >/dev/null 2>&1 || true
+    $MV_BIN -f "$tmp" "$cf" >/dev/null 2>&1 || return 1
+    log "MIGRATE verify_owner target_config=$bn shell=$shell_value backup=$backup_dir/$bn"
+  done
+  for cf in "$TARGETS_DIR"/*.conf; do
+    [ -f "$cf" ] || continue
+    $GREP_BIN -Eq "^(verify|verify_cmd|verify_kind|shell_kind)=" "$cf" 2>/dev/null && { log "FAIL verify_owner_migration legacy_key_remaining file=$cf"; return 1; }
+    $GREP_BIN -Eq "^shell=(\"?)(sh|bash)(\"?)$" "$cf" 2>/dev/null || { log "FAIL verify_owner_migration shell_missing file=$cf"; return 1; }
+  done
+  write_verify_owner_marker || return 1
+  log "PASS verify_owner_migration changed=$changed marker=$VERIFY_OWNER_FILE policy=$VERIFY_OWNER_POLICY"
+  return 0
+}
+
 import_bundle_if_needed(){
   $MKDIR_BIN -p "$SSH_DIR" "$CONFIG_DIR" "$TARGETS_DIR" "$TOOLS_DIR" >/dev/null 2>&1 || return 1
 
@@ -298,6 +374,8 @@ import_bundle_if_needed(){
   [ -f "$SSH_DIR/id_drop_dispatch_ed25519" ] && $CHMOD_BIN 600 "$SSH_DIR/id_drop_dispatch_ed25519" >/dev/null 2>&1 || true
   [ -f "$SSH_DIR/known_hosts" ] && $CHMOD_BIN 600 "$SSH_DIR/known_hosts" >/dev/null 2>&1 || true
   [ -f "$RUNTIME_SSH_CONFIG" ] && $CHMOD_BIN 600 "$RUNTIME_SSH_CONFIG" >/dev/null 2>&1 || true
+
+  migrate_verify_owner_runtime || return 1
 
   module_ver=""
   [ -f "$MODDIR/module.prop" ] && module_ver=$($GREP_BIN -E "^version=" "$MODDIR/module.prop" 2>/dev/null | $SED_BIN "s/^version=//" | $SED_BIN -n "1p")
@@ -639,8 +717,7 @@ targets_for(){
 
 target_host(){ eval "printf '%s' \"\${HOST_$1:-}\""; }
 target_dir(){ eval "printf '%s' \"\${REMOTE_DIR_$1:-}\""; }
-target_shell(){ eval "v=\"\${SHELL_$1:-bash}\""; printf '%s' "$v"; }
-target_verify(){ eval "v=\"\${VERIFY_$1:-}\""; printf '%s' "$v"; }
+target_shell(){ eval "v=\"\${SHELL_$1:-}\""; printf '%s' "$v"; }
 target_scp_flags(){ eval "v=\"\${SCP_FLAGS_$1:-}\""; printf '%s' "$v"; }
 
 # v4.12.1 delivery-safety helpers: target-specific space gates, diagnostics, ntfy notifications, break-glass SCP and delivery wait/status.
@@ -903,6 +980,30 @@ remote_sha256(){
   path="$2"
   qpath=$(sq "$path")
   "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=12 "$host" "sh -c 'if command -v sha256sum >/dev/null 2>&1; then sha256sum $qpath; elif command -v busybox >/dev/null 2>&1; then busybox sha256sum $qpath; else cksum $qpath; fi'" 2>/dev/null | $GREP_BIN -E "^[0-9a-f]{64}[[:space:]]" | $TAIL_BIN -n 1 | while read -r h rest; do printf "%s" "$h"; done
+}
+
+
+file_sha256_strict(){
+  file="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" 2>/dev/null
+  elif [ -x /data/data/com.termux/files/usr/bin/sha256sum ]; then
+    /data/data/com.termux/files/usr/bin/sha256sum "$file" 2>/dev/null
+  else
+    return 1
+  fi | while read -r h rest; do
+    printf "%s" "$h"
+  done | $GREP_BIN -E "^[0-9a-f]{64}$" | $TAIL_BIN -n 1
+}
+
+verify_remote_sha_match(){
+  file="$1"; target="$2"; host="$3"; dst="$4"; base="$5"; verify_mode="$6"
+  local_sha=$(file_sha256_strict "$file" 2>/dev/null || true)
+  remote_sha=$(remote_sha256 "$host" "$dst" 2>/dev/null || true)
+  [ -n "$local_sha" ] || { log "FAIL remote_sha local_sha_unavailable file=$base target=$target host=$host"; return 1; }
+  [ "$remote_sha" = "$local_sha" ] || { log "FAIL remote_sha mismatch file=$base target=$target host=$host local_sha256=$local_sha remote_sha256=${remote_sha:-missing}"; return 1; }
+  log "PASS verification file=$base target=$target host=$host verify_owner=dispatcher verify_mode=$verify_mode external_verify_wrapper=no remote_sha_match=yes local_sha256=$local_sha remote_sha256=$remote_sha host_run=no"
+  return 0
 }
 
 breakglass_evidence(){
@@ -1277,18 +1378,17 @@ remote_verify_basic(){
 
 remote_verify_script(){
   target="$1"; host="$2"; dst="$3"; qdst=$(sq "$dst")
-  verifier=$(target_verify "$target")
-  if [ -n "$verifier" ]; then
-    qver=$(sq "$verifier")
-    "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=12 "$host" "$qver $qdst" >/dev/null 2>&1
-    return $?
-  fi
-  case "$(target_shell "$target")" in
+  shell=$(target_shell "$target")
+  case "$shell" in
     sh)
-      "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=12 "$host" "sh -n $qdst" >/dev/null 2>&1
+      "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=12 "$host" "sh -c 'command -v sh >/dev/null 2>&1 && sh -n $qdst'" >/dev/null 2>&1
       ;;
-    bash|*)
-      "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=12 "$host" "if command -v bash >/dev/null 2>&1; then bash -n $qdst; else sh -n $qdst; fi" >/dev/null 2>&1
+    bash)
+      "$SSH_BIN" -F "$RUNTIME_SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=12 "$host" "sh -c 'command -v bash >/dev/null 2>&1 && bash -n $qdst'" >/dev/null 2>&1
+      ;;
+    *)
+      log "FAIL remote_verify invalid_shell target=$target shell=$shell verify_owner=dispatcher external_verify_wrapper=no"
+      return 1
       ;;
   esac
 }
@@ -1454,7 +1554,7 @@ fully_done_or_blocked(){
   all_quar=1
   for t in $targets; do
     already_done "$rec" "$t" || all_done=0
-    quarantined "$rec" "$t" local_preflight || quarantined "$rec" "$t" verify || quarantined "$rec" "$t" canonical_collision || all_quar=0
+    quarantined "$rec" "$t" local_preflight || quarantined "$rec" "$t" verify || quarantined "$rec" "$t" remote_sha || quarantined "$rec" "$t" canonical_collision || all_quar=0
   done
   [ "$all_done" = "1" ] && return 0
   [ "$all_quar" = "1" ] && return 0
@@ -1507,6 +1607,7 @@ process_file(){
     already_done "$rec" "$t" && continue
     quarantined "$rec" "$t" local_preflight && continue
     quarantined "$rec" "$t" verify && continue
+    quarantined "$rec" "$t" remote_sha && continue
     inflight "$rec" "$t" && continue
     add_inflight "$rec" "$t"
 
@@ -1529,6 +1630,17 @@ process_file(){
       remote_verify_script "$t" "$host" "$dst" || { log "FAIL verify file=$base target=$t host=$host"; notify_delivery FAIL "$t" "$base" verify; add_quarantine "$rec" "$t" verify; clear_inflight "$rec" "$t"; continue; }
     else
       remote_verify_basic "$host" "$dst" || { log "FAIL basic_verify file=$base target=$t host=$host"; notify_delivery FAIL "$t" "$base" basic_verify; clear_inflight "$rec" "$t"; continue; }
+    fi
+
+    verify_mode=basic
+    if is_shell "$base"; then
+      verify_mode="$(target_shell "$t")-n"
+    fi
+    if ! verify_remote_sha_match "$file" "$t" "$host" "$dst" "$base" "$verify_mode"; then
+      notify_delivery FAIL "$t" "$base" remote_sha
+      add_quarantine "$rec" "$t" remote_sha
+      clear_inflight "$rec" "$t"
+      continue
     fi
 
     record_done "$rec" "$t"
@@ -1831,6 +1943,19 @@ webui_ntfy_test(){
 runtime_status(){
   echo "== version =="
   $GREP_BIN -E "^(version=|versionCode=)" "$MODDIR/module.prop" 2>/dev/null || true
+  echo "== verification ownership =="
+  echo "verify_owner=dispatcher"
+  echo "external_verify_wrapper=no"
+  echo "remote_sha_required=yes"
+  echo "bash_missing_fallback=fail_closed"
+  echo "python_delivery=unsupported"
+  echo "verification_owner_marker=$VERIFY_OWNER_FILE"
+  if [ -f "$VERIFY_OWNER_FILE" ]; then
+    echo "verification_owner_marker_exists=yes"
+    $CAT_BIN "$VERIFY_OWNER_FILE" 2>/dev/null || true
+  else
+    echo "verification_owner_marker_exists=no"
+  fi
   registry_summary
   echo "== delivery policy =="
   echo "pi3_min_free_kb=${REMOTE_MIN_FREE_KB_pi3:-3145728}"
