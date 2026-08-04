@@ -4,42 +4,78 @@ Roadmap: `docs/VNEXT_ROADMAP.md`
 
 ## Program status
 
-- Planning baseline: merged through PR #51.
-- Milestone 1 — Identity and integrity: **in progress** through issue #53.
-- Milestone 1 foundation: pure delivery-identity helper and fixture suite implemented on the current feature branch.
-- Milestone 2 — Retry, health and maintenance: approved through issue #54, blocked on Milestone 1 runtime acceptance.
-- Milestone 3 — Workflow and target expansion: approved through issue #55, blocked on Milestones 1 and 2.
+- Stable installed runtime baseline: `4.12.6` / `4126003`.
+- Dispatcher-owned remote verification candidate: `4.13.0-verify-owner-rc1` / `4130001`.
+- Candidate source and static fixtures: **implemented**.
+- Pixel installed-runtime verification: **pending**.
+- pi3/pi4/zeropi2/BerylAX target-wrapper retirement: **blocked until installed-runtime verification passes**.
 
-## Current Milestone 1 proof
+## Dispatcher-owned remote verification candidate
 
-The foundation helper defines:
+The candidate removes the dispatcher dependency on target-local verification wrappers.
 
-- identity schema version `2`;
-- semantic name, SHA-256, normalized target set and policy identity key;
-- exact versus parenthesized-browser-alias classification;
-- intentional numeric/date suffix preservation;
-- dash-alias handling only through explicit opt-in;
-- machine-readable identity description.
+Implemented behavior:
+
+- target profiles containing `verify`, `verify_cmd`, `verify_kind`, or `shell_kind` are migrated with timestamped backups;
+- every enabled target receives an explicit `shell="bash|sh"` field;
+- Bash targets use `bash -n` and fail closed when Bash is unavailable;
+- POSIX-shell targets use `sh -n`;
+- no Bash-to-`sh -n` fallback exists;
+- local and remote SHA-256 must match before `record_done`;
+- completion state, success notifications and Sortify markers remain downstream of the SHA gate;
+- BerylAX retains `scp -O` compatibility;
+- uploaded payloads are not executed;
+- Python delivery remains intentionally unsupported.
+
+Runtime ownership marker:
+
+```text
+/data/adb/ssh-drop-dispatcher/verification-owner.env
+```
+
+Required fields:
+
+```text
+verify_owner=dispatcher
+external_verify_wrapper=no
+remote_sha_required=yes
+bash_missing_fallback=fail_closed
+python_delivery=unsupported
+```
 
 Fixture marker:
 
-`RESULT: SDD_VNEXT_M1_IDENTITY_HELPER_FIXTURES_PASS`
+```text
+RESULT: SDD_VNEXT_DISPATCHER_VERIFY_OWNER_FIXTURES_PASS version=4.13.0-verify-owner-rc1
+```
 
-This foundation is not wired into the active dispatcher service yet. Normal-path remote SHA enforcement, marker identity v2, alias-aware status/wait and pi3 threshold integration remain open in issue #53.
+Candidate artifact:
 
-## Current boundaries
+```text
+dist/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc1.zip
+```
 
-- Stable runtime remains `4.12.6` / `4126003`.
+## Installation acceptance gate
+
+The candidate is not accepted as live runtime until Pixel evidence shows all of the following:
+
+- module version `4.13.0-verify-owner-rc1` / `4130001`;
+- `verification_owner_marker_exists=yes`;
+- exact ownership marker fields;
+- `--config-lint` passes;
+- pi3, pi4 and zeropi2 show `shell=bash`;
+- BerylAX shows `shell=sh` and `scp_flags=-O`;
+- no target config contains a legacy verify key;
+- a delivery fixture records `remote_sha_match=yes` before `record_done`;
+- a missing-Bash fixture fails without falling back to `sh -n`;
+- no host payload execution occurs.
+
+Only after this gate passes may the separate wrapper-retirement controller disable the target-local wrappers.
+
+## Safety boundaries
+
+- Existing target-local wrappers remain unchanged until the installed candidate proves ownership.
 - Sortify marker policy remains `v4115`.
-- No host execution is added.
-- No active Pixel runtime or stable update metadata is changed.
-- No release, tag or publish action is authorized by this implementation step.
-- No DNS, HA, VIP, default-route, static-route, MagicDNS or subnet-route changes.
-
-## Milestone 1 final gate
-
-Milestone 1 is complete only after service integration and the full fixture matrix finish with:
-
-`RESULT: SDD_VNEXT_M1_IDENTITY_INTEGRITY_FIXTURES_PASS`
-
-Runtime installation and RC publication remain separate later gates.
+- No DNS, HA, VIP, default-route, static-route, MagicDNS or subnet-route change is part of this work.
+- Stable update metadata is not promoted by this candidate step.
+- No public release or final tag is implied by the RC artifact.
