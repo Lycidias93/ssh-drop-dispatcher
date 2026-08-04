@@ -1,2 +1,1 @@
 RESULT: SDD_VNEXT_DISPATCHER_VERIFY_OWNER_FIXTURES_PASS version=4.13.0-verify-owner-rc1
-artifact=dist/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc1.zip
