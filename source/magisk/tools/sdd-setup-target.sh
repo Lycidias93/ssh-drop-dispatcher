@@ -181,11 +181,12 @@ host=$alias_name
 remote_drop=$remote_drop
 platform=linux
 shell=$shell_type
-verify=generic
 role=user
 EOF
 chmod 600 "$target_conf"
 echo "Target config written: $target_conf"
+echo "verify_owner=dispatcher"
+echo "external_verify_wrapper=no"
 
 echo
 echo "== ssh smoke test =="
