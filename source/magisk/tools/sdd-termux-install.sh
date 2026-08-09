@@ -30,10 +30,14 @@ write_runtime_config(){
   cat > "$RUNTIME_CONFIG" <<'EOF_RUNTIME_CONFIG'
 #!/system/bin/sh
 STATE_DIR=/data/adb/ssh-drop-dispatcher
-TOOL=$STATE_DIR/tools/dispatch-config.sh
-MODULE_TOOL=/data/adb/modules/ssh_drop_dispatcher/tools/dispatch-config.sh
-if [ -x "$TOOL" ]; then exec "$TOOL" "$@"; fi
-if [ -x "$MODULE_TOOL" ]; then exec "$MODULE_TOOL" "$@"; fi
+TOOL_V2=$STATE_DIR/tools/dispatch-config-v2.sh
+MODULE_TOOL_V2=/data/adb/modules/ssh_drop_dispatcher/tools/dispatch-config-v2.sh
+TOOL_LEGACY=$STATE_DIR/tools/dispatch-config.sh
+MODULE_TOOL_LEGACY=/data/adb/modules/ssh_drop_dispatcher/tools/dispatch-config.sh
+if [ -x "$TOOL_V2" ]; then exec "$TOOL_V2" "$@"; fi
+if [ -x "$MODULE_TOOL_V2" ]; then exec "$MODULE_TOOL_V2" "$@"; fi
+if [ -x "$TOOL_LEGACY" ]; then exec "$TOOL_LEGACY" "$@"; fi
+if [ -x "$MODULE_TOOL_LEGACY" ]; then exec "$MODULE_TOOL_LEGACY" "$@"; fi
 echo "dispatch-config tool missing"
 exit 69
 EOF_RUNTIME_CONFIG
@@ -107,6 +111,7 @@ install_all(){
   echo "runtime_sdd=$RUNTIME_SDD"
   echo "runtime_dispatch_config=$RUNTIME_CONFIG"
   echo "bridge_contract=sdd-termux-v2"
+  echo "dispatch_config_frontend=v2"
   echo "RESULT: SDD_TERMUX_BRIDGE_INSTALL_DONE outcome=success exit_code=0"
 }
 
@@ -123,6 +128,7 @@ bridge_status(){
   [ -x "$TERMUX_CONFIG" ] && termux_dispatch_config=yes || termux_dispatch_config=no
   echo "schema=sdd-termux-bridge-status-v2"
   echo "bridge_contract=sdd-termux-v2"
+  echo "dispatch_config_frontend=v2"
   echo "runtime_sdd=$runtime_sdd"
   echo "runtime_dispatch_config=$runtime_dispatch_config"
   echo "termux_sdd=$termux_sdd"
