@@ -9,7 +9,7 @@ TARGET_DIR=${SDD_TARGET_DIR:-$STATE_DIR/config/targets.d}
 HEALTH_FILE=${SDD_HEALTH_FILE:-$STATE_DIR/health.env}
 VERIFY_OWNER_FILE=${SDD_VERIFY_OWNER_FILE:-$STATE_DIR/verification-owner.env}
 LOG_FILE=${SDD_LOG_FILE:-$STATE_DIR/log/dispatch.log}
-CONFIG_TOOL=${SDD_CONFIG_TOOL:-$STATE_DIR/tools/dispatch-config.sh}
+CONFIG_TOOL=${SDD_CONFIG_TOOL:-$STATE_DIR/tools/dispatch-config-v2.sh}
 DOCTOR_TOOL=${SDD_DOCTOR_TOOL:-$STATE_DIR/tools/pidd-doctor.sh}
 TERMUX_INSTALL_TOOL=${SDD_TERMUX_INSTALL_TOOL:-$STATE_DIR/tools/sdd-termux-install.sh}
 TERMUX_BIN=${SDD_TERMUX_BIN:-/data/data/com.termux/files/usr/bin}
@@ -30,7 +30,7 @@ Usage: sdd [--env|--json] [--no-prompt] <command> [args]
 Commands: version, capabilities, status, targets, target test <name>, dispatch,
   delivery status <file>, delivery wait <file> [timeout] [interval], requeue <file>,
   logs [lines], doctor [--chatgpt], chatgpt-context, snapshot, explain <code>,
-  config [legacy dispatch-config args], install-termux, bridge-status, help
+  config [compat dispatch-config args], install-termux, bridge-status, help
 EOF_USAGE
 }
 
@@ -45,6 +45,12 @@ for arg in "$@"; do case "$arg" in --json) FORMAT=json;; --env) FORMAT=env;; --n
 
 find_doctor(){ [ -x "$DOCTOR_TOOL" ] && { printf '%s' "$DOCTOR_TOOL"; return; }; [ -x "$MODDIR/tools/pidd-doctor.sh" ] && printf '%s' "$MODDIR/tools/pidd-doctor.sh"; }
 find_bridge(){ [ -x "$TERMUX_INSTALL_TOOL" ] && { printf '%s' "$TERMUX_INSTALL_TOOL"; return; }; [ -x "$MODDIR/tools/sdd-termux-install.sh" ] && printf '%s' "$MODDIR/tools/sdd-termux-install.sh"; }
+find_config(){
+  [ -x "$CONFIG_TOOL" ] && { printf '%s' "$CONFIG_TOOL"; return; }
+  [ -x "$MODDIR/tools/dispatch-config-v2.sh" ] && { printf '%s' "$MODDIR/tools/dispatch-config-v2.sh"; return; }
+  [ -x "$STATE_DIR/tools/dispatch-config.sh" ] && { printf '%s' "$STATE_DIR/tools/dispatch-config.sh"; return; }
+  [ -x "$MODDIR/tools/dispatch-config.sh" ] && printf '%s' "$MODDIR/tools/dispatch-config.sh"
+}
 
 case "$cmd" in
   version) [ "$ARGC" -eq 0 ] || { usage_error version_arguments; exit 64; }; emit_version ;;
@@ -66,8 +72,8 @@ case "$cmd" in
   explain) [ "$ARGC" -eq 1 ] || { usage_error explain_arguments; exit 64; }; emit_explain "$ARG1" ;;
   config)
     [ "$NO_PROMPT" -eq 0 ] || { echo "sdd_cli=STOP reason=interactive_config_blocked_no_prompt"; echo "RESULT: SDD_CLI_DONE command=config outcome=blocked exit_code=64"; exit 64; }
-    [ -x "$CONFIG_TOOL" ] || CONFIG_TOOL=$MODDIR/tools/dispatch-config.sh; [ -x "$CONFIG_TOOL" ] || { echo "sdd_cli=FAIL reason=config_tool_missing"; exit 69; }
-    case "$ARGC" in 0) "$CONFIG_TOOL";; 1) "$CONFIG_TOOL" "$ARG1";; 2) "$CONFIG_TOOL" "$ARG1" "$ARG2";; 3) "$CONFIG_TOOL" "$ARG1" "$ARG2" "$ARG3";; *) usage_error config_arguments; exit 64;; esac ;;
+    tool=$(find_config); [ -n "$tool" ] || { echo "sdd_cli=FAIL reason=config_tool_missing"; exit 69; }
+    case "$ARGC" in 0) "$tool";; 1) "$tool" "$ARG1";; 2) "$tool" "$ARG1" "$ARG2";; 3) "$tool" "$ARG1" "$ARG2" "$ARG3";; *) usage_error config_arguments; exit 64;; esac ;;
   install-termux|bridge-status)
     tool=$(find_bridge); [ -n "$tool" ] || { echo "sdd_cli=FAIL reason=termux_installer_missing"; exit 69; }; [ "$ARGC" -eq 0 ] || { usage_error bridge_arguments; exit 64; }; [ "$cmd" = install-termux ] && "$tool" install || "$tool" status ;;
   help) usage ;;
