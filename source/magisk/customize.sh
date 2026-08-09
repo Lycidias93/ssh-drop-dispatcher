@@ -5,18 +5,14 @@ POSTFSDATA=false
 LATESTARTSERVICE=true
 
 STATE_DIR=/data/adb/ssh-drop-dispatcher
-TERMUX_BIN=/data/data/com.termux/files/usr/bin
-TERMUX_CMD=$TERMUX_BIN/dispatch-config
 RUNTIME_BIN=$STATE_DIR/bin
-RUNTIME_CMD=$RUNTIME_BIN/dispatch-config
+TERMUX_INSTALLER=$STATE_DIR/tools/sdd-termux-install.sh
 
-ui_print "SSH Drop Dispatcher 4.13.0-verify-owner-rc1"
+ui_print "SSH Drop Dispatcher 4.13.0-verify-owner-rc2"
 ui_print "Runtime SoT: $STATE_DIR"
-ui_print "Author: Lycidias93
-Dispatcher-owned remote syntax verification + strict shell profiles + fail-closed Bash + normal-path SHA-256 parity + delivery safety + break-glass SCP + ntfy + Sortify marker contract
-Prompt-safe private runtime export: final"
+ui_print "Author: Lycidias93"
+ui_print "Dispatcher-owned remote verification + CLI v2 + hardened Termux bridge + ChatGPT machine context"
 ui_print "Public defaults only: no bundled private targets or keys"
-ui_print "Command: dispatch-config"
 
 mkdir -p "$STATE_DIR/log" "$STATE_DIR/ssh" "$STATE_DIR/config/targets.d" "$STATE_DIR/tools" "$RUNTIME_BIN" "$STATE_DIR/backups"
 
@@ -37,46 +33,17 @@ if [ -d "$MODPATH/tools" ]; then
   done
 fi
 
-cat > "$RUNTIME_CMD" <<'EOF_CMD'
-#!/system/bin/sh
-STATE_DIR=/data/adb/ssh-drop-dispatcher
-TOOL=$STATE_DIR/tools/dispatch-config.sh
-MODULE_TOOL=/data/adb/modules/ssh_drop_dispatcher/tools/dispatch-config.sh
-if [ -x "$TOOL" ]; then
-  exec "$TOOL" "$@"
-fi
-if [ -x "$MODULE_TOOL" ]; then
-  exec "$MODULE_TOOL" "$@"
-fi
-echo "dispatch-config tool missing"
-exit 1
-EOF_CMD
-chmod 755 "$RUNTIME_CMD" 2>/dev/null || true
-
-if [ -d "$TERMUX_BIN" ]; then
-  cat > "$TERMUX_CMD" <<'EOF_TERMUX'
-#!/data/data/com.termux/files/usr/bin/sh
-cmd="/data/adb/ssh-drop-dispatcher/bin/dispatch-config"
-if [ "$(id -u 2>/dev/null)" = "0" ]; then
-  exec "$cmd" "$@"
-fi
-quoted="$cmd"
-for arg in "$@"; do
-  safe=$(printf "%s" "$arg" | sed "s/'/'\\''/g")
-  quoted="$quoted '$safe'"
-done
-exec su -c "$quoted"
-EOF_TERMUX
-  chmod 755 "$TERMUX_CMD" 2>/dev/null || true
-  ui_print "- Termux command installed: dispatch-config"
+if [ -x "$TERMUX_INSTALLER" ]; then
+  "$TERMUX_INSTALLER" install >/dev/null 2>&1 || true
 else
-  ui_print "- Termux not found yet; install command later with dispatch-config"
+  ui_print "- WARN: Termux bridge installer missing; runtime tools remain available through module paths"
 fi
 
-ui_print "- After reboot run: dispatch-config"
-ui_print "- Fallback: su -c $RUNTIME_CMD"
-ui_print "- Runtime status: su -c /data/adb/modules/ssh_drop_dispatcher/service.sh --runtime-status"
-
-ui_print "- Private runtime export: dispatch-config -> Export existing private runtime ZIP"
-
-ui_print "- Private runtime export prompt fix: final"
+ui_print "- Primary Termux command: sdd"
+ui_print "- Legacy interactive config command: dispatch-config"
+ui_print "- Machine status: sdd status --env"
+ui_print "- JSON status: sdd status --json"
+ui_print "- ChatGPT context: sdd chatgpt-context"
+ui_print "- ChatGPT doctor: sdd doctor --chatgpt"
+ui_print "- Runtime fallback: su -c $RUNTIME_BIN/sdd"
+ui_print "- Private runtime export remains available through dispatch-config"
