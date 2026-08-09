@@ -8,10 +8,12 @@ SDD_TOOL=${SDD_TOOL:-$STATE_DIR/tools/sdd.sh}
 BRIDGE=${SDD_TERMUX_INSTALL_TOOL:-$STATE_DIR/tools/sdd-termux-install.sh}
 SETUP=${SDD_SETUP_TOOL:-$MODDIR/tools/sdd-setup.sh}
 SETUP_TARGET=${SDD_SETUP_TARGET_TOOL:-$MODDIR/tools/sdd-setup-target.sh}
+SANITIZER=${SDD_CONFIG_SANITIZER:-$STATE_DIR/tools/sdd-config-sanitize.sh}
 MODULE_PROP=${SDD_MODULE_PROP:-$MODDIR/module.prop}
 
 [ -x "$SDD_TOOL" ] || SDD_TOOL=$MODDIR/tools/sdd.sh
 [ -x "$BRIDGE" ] || BRIDGE=$MODDIR/tools/sdd-termux-install.sh
+[ -x "$SANITIZER" ] || SANITIZER=$MODDIR/tools/sdd-config-sanitize.sh
 
 module_field(){
   key=$1
@@ -49,6 +51,17 @@ run_legacy(){
   "$LEGACY" "$@"
 }
 
+sanitize_config(){
+  need_exec config_sanitizer "$SANITIZER" || return $?
+  "$SANITIZER"
+}
+
+run_legacy_mutating(){
+  cmd=$1
+  run_legacy "$cmd" || return $?
+  sanitize_config
+}
+
 install_termux(){ need_exec bridge "$BRIDGE" || return $?; "$BRIDGE" install; }
 remove_termux(){ need_exec bridge "$BRIDGE" || return $?; "$BRIDGE" remove; }
 bridge_status(){ need_exec bridge "$BRIDGE" || return $?; "$BRIDGE" status; }
@@ -70,6 +83,7 @@ Commands: setup, target, targets, test-target [name], status, doctor,
   install-termux-command, remove-termux-command, bridge-status,
   backup|export, restore|import, export-private-runtime,
   import-private-runtime, reset-defaults, issue, help
+Legacy imports/resets are sanitized to the dispatcher-owned verification schema before returning.
 No command opens the compatibility menu.
 EOF_USAGE
 }
@@ -108,10 +122,10 @@ menu(){
       7) install_termux; pause ;;
       8) bridge_status; pause ;;
       9) run_legacy backup; pause ;;
-      10) run_legacy restore; pause ;;
+      10) run_legacy_mutating restore; pause ;;
       11) run_legacy export-private-runtime; pause ;;
-      12) run_legacy import-private-runtime; pause ;;
-      13) run_legacy reset-defaults; pause ;;
+      12) run_legacy_mutating import-private-runtime; pause ;;
+      13) run_legacy_mutating reset-defaults; pause ;;
       14) run_legacy issue; pause ;;
       0) exit 0 ;;
       *) echo "Invalid choice"; pause ;;
@@ -131,6 +145,7 @@ case "${1:-}" in
   install-termux-command|install-termux) install_termux ;;
   remove-termux-command|remove-termux) remove_termux ;;
   bridge-status) bridge_status ;;
-  backup|export|restore|import|export-private-runtime|import-private-runtime|reset-defaults|issue|issue.txt) run_legacy "$1" ;;
+  restore|import|import-private-runtime|reset-defaults) run_legacy_mutating "$1" ;;
+  backup|export|export-private-runtime|issue|issue.txt) run_legacy "$1" ;;
   *) usage >&2; echo "RESULT: SDD_DISPATCH_CONFIG_V2_DONE outcome=usage_error exit_code=64"; exit 64 ;;
 esac
