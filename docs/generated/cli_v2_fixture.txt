@@ -1,0 +1,1 @@
+RESULT: SDD_CLI_V2_CONTRACT_FIXTURES_PASS version=4.13.0-verify-owner-rc2 cli_schema=2 chatgpt_context_schema=1
