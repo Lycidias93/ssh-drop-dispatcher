@@ -168,6 +168,10 @@ def verify_stage(stage: Path, work: Path) -> None:
     extension = (stage / "webroot/sdd-ui.js").read_text()
     if "127.0.0.1:0" not in action or "bootstrap.token" not in action:
         raise RuntimeError("loopback_bootstrap_contract_missing")
+    if "AM_BIN=/system/bin/am" not in action or '"$AM_BIN" get-current-user' not in action or '"$AM_BIN" start' not in action:
+        raise RuntimeError("android_framework_namespace_contract_missing")
+    if "CURRENT_USER=$(am " in action or "if ! am start" in action:
+        raise RuntimeError("unqualified_android_am_forbidden")
     if "window.ksu" in control or "eval " in control:
         raise RuntimeError("unsafe_webui_adapter_pattern")
     if "arbitrary_path_input_blocked" not in control:
