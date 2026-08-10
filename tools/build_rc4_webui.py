@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path
 import shutil
@@ -104,7 +105,7 @@ def stage_module(work: Path, fetched: dict[str, Path]) -> Path:
     return stage
 
 
-def verify_stage(stage: Path) -> None:
+def verify_stage(stage: Path, work: Path) -> None:
     required = [
         "module.prop", "customize.sh", "action.sh", "service.sh",
         "bin/module-control", "bin/webui-server-arm64",
@@ -132,11 +133,40 @@ def verify_stage(stage: Path) -> None:
         raise RuntimeError("unsafe_webui_adapter_pattern")
     if "arbitrary_path_input_blocked" not in control:
         raise RuntimeError("adapter_safety_fact_missing")
+    if (stage / "bin/webui-server-arm64").read_bytes()[:4] != b"\x7fELF":
+        raise RuntimeError("webui_server_not_elf")
 
     run(["sh", "-n", str(stage / "action.sh")])
     run(["sh", "-n", str(stage / "customize.sh")])
     run(["sh", "-n", str(stage / "bin/module-control")])
-    run([str(stage / "action.sh"), "--verify"], env={**os.environ, "MODULE_DIR": str(stage)})
+
+    adapter_runtime = work / "adapter-runtime"
+    adapter_state = work / "adapter-state"
+    adapter_runtime.mkdir()
+    adapter_state.mkdir()
+    env = os.environ.copy()
+    env.update({
+        "MODULE_DIR": str(stage),
+        "MODULE_STATE_DIR": str(adapter_state),
+        "WEBUI_RUNTIME_DIR": str(adapter_runtime),
+        "SDD_WEBUI_CONFIG_FILE": str(adapter_state / "config.env"),
+        "SDD_WEBUI_TARGET_DIR": str(adapter_state / "targets.d"),
+        "SDD_WEBUI_QUAR_DB": str(adapter_state / "dispatch.quarantined"),
+        "SDD_WEBUI_RECEIPT_DB": str(adapter_state / "delivery.receipts.jsonl"),
+    })
+    probe = subprocess.run(
+        ["sh", str(stage / "bin/module-control"), "capabilities"],
+        env=env,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    capabilities = json.loads(probe.stdout)
+    if capabilities.get("schema") != "root-module-webui.capabilities.v1":
+        raise RuntimeError("capability_schema_mismatch")
+    names = {item.get("name") for item in capabilities.get("inventories", [])}
+    if not {"queue", "targets", "quarantine", "failures", "receipts"}.issubset(names):
+        raise RuntimeError("required_inventory_missing")
 
 
 def build(output: Path) -> None:
@@ -146,7 +176,7 @@ def build(output: Path) -> None:
         work = Path(tmp)
         fetched = fetch_core(work)
         stage = stage_module(work, fetched)
-        verify_stage(stage)
+        verify_stage(stage, work)
 
         first = work / "first.zip"
         second = work / "second.zip"
