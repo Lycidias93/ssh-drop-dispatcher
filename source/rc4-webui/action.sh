@@ -8,6 +8,7 @@ STATE_DIR=/data/adb/ssh-drop-dispatcher
 RUNTIME_DIR=/data/local/tmp/${MODULE_ID}-webui
 SERVER="$MODDIR/bin/webui-server-arm64"
 CONTROL="$MODDIR/bin/module-control"
+AM_BIN=/system/bin/am
 PID_FILE="$RUNTIME_DIR/server.pid"
 READY_FILE="$RUNTIME_DIR/server.ready.json"
 TOKEN_FILE="$RUNTIME_DIR/bootstrap.token"
@@ -64,11 +65,13 @@ make_token() {
 
 [ -x "$SERVER" ] || fail server_binary_missing
 [ -x "$CONTROL" ] || fail module_control_missing
+[ -x "$AM_BIN" ] || fail android_am_missing
 
 mkdir -p "$STATE_DIR" "$RUNTIME_DIR"
 chmod 0700 "$STATE_DIR" "$RUNTIME_DIR" 2>/dev/null || true
 
 if [ "${1:-}" = "--verify" ]; then
+  "$AM_BIN" get-current-user >/dev/null 2>&1 || fail android_am_probe_failed
   "$SERVER" \
     -self-test \
     -webroot "$MODDIR/webroot" \
@@ -81,6 +84,8 @@ if [ "${1:-}" = "--verify" ]; then
     -job-timeout 30m \
     -max-jobs 2 || fail server_self_test_failed
   echo "action_mode=standalone_browser"
+  echo "framework_command_namespace=android-system"
+  echo "android_am_path=$AM_BIN"
   echo "browser_bind=127.0.0.1"
   echo "browser_port=dynamic"
   echo "bootstrap=one_time_token_to_http_only_cookie"
@@ -136,11 +141,11 @@ PORT=$(sed -n 's/.*"port":[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$READY_FILE" | he
 case "$PORT" in ""|*[!0-9]*) fail invalid_server_port ;; esac
 [ "$PORT" -ge 1024 ] && [ "$PORT" -le 65535 ] || fail invalid_server_port
 
-CURRENT_USER=$(am get-current-user 2>/dev/null | tr -cd '0-9')
+CURRENT_USER=$("$AM_BIN" get-current-user 2>/dev/null | tr -cd '0-9')
 [ -n "$CURRENT_USER" ] || CURRENT_USER=0
 URL="http://127.0.0.1:$PORT/bootstrap?token=$TOKEN"
 
-if ! am start --user "$CURRENT_USER" \
+if ! "$AM_BIN" start --user "$CURRENT_USER" \
   -a android.intent.action.VIEW \
   -c android.intent.category.BROWSABLE \
   -d "$URL" >/dev/null 2>&1; then
@@ -149,6 +154,8 @@ fi
 
 unset TOKEN URL
 echo "SSH Drop Dispatcher WebUI opened in the default browser."
+echo "framework_command_namespace=android-system"
+echo "android_am_path=$AM_BIN"
 echo "browser_port=$PORT"
 echo "browser_final_url_token_policy=one_time_bootstrap_then_clean_root"
 echo "server_scope=loopback_only"
