@@ -1,0 +1,1 @@
+RESULT: SDD_RC3_WORKFLOW_CONTRACT_FIXTURES_PASS version=4.13.0-verify-owner-rc3 cli_schema=3 workflow_schema=1 receipt_schema=1 incident_schema=1
