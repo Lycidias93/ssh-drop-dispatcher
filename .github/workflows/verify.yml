@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - rc4-webui-overhaul
   pull_request:
     branches:
       - main
@@ -20,7 +21,7 @@ jobs:
   verify:
     name: verify
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,13 +36,40 @@ jobs:
               *bash*) bash -n "$file" ;;
               *) sh -n "$file" ;;
             esac
-          done < <(find source/magisk tests -type f -name '*.sh' -print0)
+          done < <(find source/magisk source/rc4-webui tests -type f \( -name '*.sh' -o -name 'module-control' \) -print0)
 
       - name: Verify dispatcher identity fixtures
         shell: bash
         run: |
           set -euo pipefail
           bash tests/sdd-vnext-m1-identity-fixtures.sh
+
+      - name: Verify RC2 CLI contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/verify_cli_v2_contract.sh
+          bash tests/verify_rc2_config_frontend_contract.sh
+
+      - name: Verify RC3 workflow contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/verify_rc3_workflow_contract.sh
+
+      - name: Build RC4 secure standalone WebUI candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/build_rc4_webui.py --output /tmp/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip | tee /tmp/rc4-build.log
+          grep -Fq 'RESULT: SDD_RC4_WEBUI_BUILD_DONE outcome=success delivery_core_changed=no workflow_exit_code=0' /tmp/rc4-build.log
+          unzip -tq /tmp/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip >/dev/null
+          unzip -p /tmp/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip module.prop | grep -Fxq 'version=4.13.0-verify-owner-rc4'
+          unzip -p /tmp/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip module.prop | grep -Fxq 'versionCode=4130004'
+          unzip -Z1 /tmp/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip | grep -Fxq 'bin/webui-server-arm64'
+          unzip -Z1 /tmp/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip | grep -Fxq 'bin/module-control'
+          unzip -Z1 /tmp/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip | grep -Fxq 'webroot/app.js'
+          unzip -Z1 /tmp/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip | grep -Fxq 'webroot/app.css'
 
       - name: Verify module metadata
         shell: bash
