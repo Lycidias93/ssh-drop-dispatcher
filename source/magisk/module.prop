@@ -1,7 +1,7 @@
 id=ssh_drop_dispatcher
 name=SSH Drop Dispatcher
-version=4.13.0-verify-owner-rc2
-versionCode=4130002
+version=4.13.0-verify-owner-rc3
+versionCode=4130003
 author=Lycidias93
-description=Android/Magisk SSH file-drop dispatcher with dispatcher-owned remote verification, strict shell profiles, fail-closed Bash, SHA-256 parity, CLI v2, hardened Termux bridge, ChatGPT-safe machine context, WebUI, delivery safety, ntfy and Sortify marker contract
+description=Android/Magisk SSH file-drop dispatcher with dispatcher-owned remote verification, strict shell profiles, fail-closed Bash, SHA-256 parity, CLI v3 workflow tracing, read-only preflight, incident context, delivery receipts, hardened Termux bridge, WebUI, delivery safety, ntfy and Sortify marker contract
 updateJson=https://raw.githubusercontent.com/Lycidias93/ssh-drop-dispatcher/main/update.json
