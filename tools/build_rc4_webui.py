@@ -67,6 +67,41 @@ def run(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None =
     subprocess.run(cmd, cwd=cwd, env=env, check=True)
 
 
+def patch_webroot(webroot: Path) -> None:
+    for name in ("sdd-ui.js", "sdd-ui.css"):
+        shutil.copy2(OVERLAY / "webroot" / name, webroot / name)
+
+    index = webroot / "index.html"
+    html = index.read_text()
+
+    css_anchor = '  <link rel="stylesheet" href="app.css">'
+    css_replacement = css_anchor + '\n  <link rel="stylesheet" href="sdd-ui.css">'
+    if html.count(css_anchor) != 1:
+        raise RuntimeError("webui_css_anchor_mismatch")
+    html = html.replace(css_anchor, css_replacement, 1)
+
+    status_anchor = '      <div id="statusCards" class="cards"></div>'
+    target_block = '''      <div id="statusCards" class="cards"></div>
+      <section class="sdd-target-block" aria-labelledby="sddTargetsTitle">
+        <div class="panel-heading">
+          <div><h2 id="sddTargetsTitle">Target Matrix</h2><p>Secret-safe configured targets. Readiness tests run only on demand.</p></div>
+          <button id="sddTargetRefresh" type="button">Refresh targets</button>
+        </div>
+        <div id="sddTargetCards" class="sdd-target-cards"></div>
+      </section>'''
+    if html.count(status_anchor) != 1:
+        raise RuntimeError("webui_status_anchor_mismatch")
+    html = html.replace(status_anchor, target_block, 1)
+
+    script_anchor = '  <script src="app.js"></script>'
+    script_replacement = script_anchor + '\n  <script src="sdd-ui.js"></script>'
+    if html.count(script_anchor) != 1:
+        raise RuntimeError("webui_script_anchor_mismatch")
+    html = html.replace(script_anchor, script_replacement, 1)
+
+    index.write_text(html)
+
+
 def stage_module(work: Path, fetched: dict[str, Path]) -> Path:
     stage = work / "stage"
     shutil.copytree(BASE, stage)
@@ -84,6 +119,7 @@ def stage_module(work: Path, fetched: dict[str, Path]) -> Path:
     webroot.mkdir(parents=True)
     for name in ("index.html", "app.js", "app.css"):
         shutil.copy2(fetched[f"module/webroot/{name}"], webroot / name)
+    patch_webroot(webroot)
 
     bindir = stage / "bin"
     bindir.mkdir(parents=True, exist_ok=True)
@@ -110,6 +146,7 @@ def verify_stage(stage: Path, work: Path) -> None:
         "module.prop", "customize.sh", "action.sh", "service.sh",
         "bin/module-control", "bin/webui-server-arm64",
         "webroot/index.html", "webroot/app.js", "webroot/app.css",
+        "webroot/sdd-ui.js", "webroot/sdd-ui.css",
         "tools/sdd.sh", "tools/sdd-machine.sh", "tools/sdd-workflow.sh",
     ]
     for rel in required:
@@ -127,12 +164,18 @@ def verify_stage(stage: Path, work: Path) -> None:
 
     action = (stage / "action.sh").read_text()
     control = (stage / "bin/module-control").read_text()
+    index = (stage / "webroot/index.html").read_text()
+    extension = (stage / "webroot/sdd-ui.js").read_text()
     if "127.0.0.1:0" not in action or "bootstrap.token" not in action:
         raise RuntimeError("loopback_bootstrap_contract_missing")
     if "window.ksu" in control or "eval " in control:
         raise RuntimeError("unsafe_webui_adapter_pattern")
     if "arbitrary_path_input_blocked" not in control:
         raise RuntimeError("adapter_safety_fact_missing")
+    if "sddTargetCards" not in index or "sdd-ui.js" not in index or "sdd-ui.css" not in index:
+        raise RuntimeError("target_card_extension_missing")
+    if "exec(" in extension or "window.ksu" in extension or "window.apatch" in extension:
+        raise RuntimeError("unsafe_webui_extension_pattern")
     if (stage / "bin/webui-server-arm64").read_bytes()[:4] != b"\x7fELF":
         raise RuntimeError("webui_server_not_elf")
 
