@@ -1,0 +1,11 @@
+schema=ssh-drop-dispatcher-webui-core-lock-v1
+template_repository=Lycidias93/android-root-module-webui-template
+template_commit=5b8e412428cd04b1cf98a1fc0e03269580b60d71
+core_version=0.2.2
+core_version_blob=ee1372d33a29e27945406f0527f8af8e6ee119c9
+migration_model=adapter-first
+browser_transport=loopback-only
+bootstrap=one-time-token-to-httponly-cookie
+javascript_shell_exec=forbidden
+arbitrary_path_input=forbidden
+boot_dependency=no
