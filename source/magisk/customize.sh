@@ -8,10 +8,10 @@ STATE_DIR=/data/adb/ssh-drop-dispatcher
 RUNTIME_BIN=$STATE_DIR/bin
 TERMUX_INSTALLER=$STATE_DIR/tools/sdd-termux-install.sh
 
-ui_print "SSH Drop Dispatcher 4.13.0-verify-owner-rc2"
+ui_print "SSH Drop Dispatcher 4.13.0-verify-owner-rc3"
 ui_print "Runtime SoT: $STATE_DIR"
 ui_print "Author: Lycidias93"
-ui_print "Dispatcher-owned remote verification + CLI v2 + hardened Termux bridge + ChatGPT machine context"
+ui_print "Dispatcher-owned remote verification + CLI v3 workflow/trace + hardened Termux bridge"
 ui_print "Public defaults only: no bundled private targets or keys"
 
 mkdir -p "$STATE_DIR/log" "$STATE_DIR/ssh" "$STATE_DIR/config/targets.d" "$STATE_DIR/tools" "$RUNTIME_BIN" "$STATE_DIR/backups"
@@ -40,10 +40,12 @@ else
 fi
 
 ui_print "- Primary Termux command: sdd"
+ui_print "- Workflow trace: sdd trace <file|delivery-id>"
+ui_print "- Read-only preflight: sdd preflight <file>"
+ui_print "- Delivery workflow: sdd dispatch-file <file> --wait"
+ui_print "- Incident context: sdd incident --chatgpt"
+ui_print "- Queue/quarantine: sdd queue / sdd quarantine"
 ui_print "- Legacy interactive config command: dispatch-config"
 ui_print "- Machine status: sdd status --env"
-ui_print "- JSON status: sdd status --json"
 ui_print "- ChatGPT context: sdd chatgpt-context"
-ui_print "- ChatGPT doctor: sdd doctor --chatgpt"
 ui_print "- Runtime fallback: su -c $RUNTIME_BIN/sdd"
-ui_print "- Private runtime export remains available through dispatch-config"
