@@ -18,7 +18,7 @@ Existing status/version/target output schemas remain compatible; `cli_schema=3` 
 
 ## Delivery identity
 
-RC3 derives a stable workflow identity from the dispatcher's existing record contract instead of introducing a second transport identity.
+RC3 derives a stable opaque workflow identity from the dispatcher's existing record contract instead of introducing a second transport identity.
 
 Existing dispatcher record:
 
@@ -29,10 +29,12 @@ Existing dispatcher record:
 Derived workflow ID:
 
 ```text
-SDD-<cksum-crc>-<bytes>
+SDD-<first-16-hex-of-SHA256(dispatcher-record)>
 ```
 
-The derived ID can be resolved back through the existing done/complete/inflight/quarantine state or, while the local artifact remains present, from the scan directory.
+The complete existing record, including basename and the dispatcher's cksum/size identity, is hashed. This avoids exposing the filename in the ID and avoids dropping the basename from correlation identity.
+
+The derived ID can be resolved by hashing records already present in done/complete/inflight/quarantine/fail state or, while the local artifact remains present, by deriving its current dispatcher record from the scan directory.
 
 This means RC3 tracing can cover records created before RC3 without rewriting historical dispatcher state.
 
@@ -79,7 +81,7 @@ Trace is local-state inspection and reports:
 host_run=no
 ```
 
-The env form may include a short redacted log excerpt. The JSON form stays compact and structured.
+The env form may include a short redacted log excerpt. The JSON form stays compact and structured. Failed JSON trace requests remain JSON-only; they do not fall through into ENV output.
 
 ## Queue/failure/quarantine inspection
 
@@ -144,7 +146,7 @@ The workflow is:
 preflight -> existing dispatcher scan -> wait-delivery -> receipt
 ```
 
-The normal scan processes the existing ready dispatcher queue. Therefore the receipt explicitly reports:
+The normal scan processes the existing ready dispatcher queue. Therefore a started delivery receipt explicitly reports:
 
 ```text
 scan_scope=existing_queue
@@ -154,6 +156,14 @@ automatic_requeue=no
 The named file is the item RC3 waits on and receipts, but other already-pending dispatcher artifacts may be processed by the normal scan at the same time. This preserves the existing single dispatcher engine and its ordering/safety rules.
 
 No automatic requeue occurs after failure or timeout.
+
+If preflight blocks before the dispatcher scan starts, the receipt reports:
+
+```text
+scan_scope=not_started
+```
+
+`hostRun` also reflects reality: it stays false for a purely local preflight rejection and becomes true only if remote readiness probing or the delivery workflow actually reached a host-facing phase.
 
 ## Delivery receipt
 
@@ -165,7 +175,7 @@ SDD_DELIVERY_RECEIPT_V1
 
 Receipts contain:
 
-- delivery ID;
+- opaque delivery ID;
 - file basename;
 - dispatcher record;
 - targets;
@@ -173,10 +183,10 @@ Receipts contain:
 - final workflow state;
 - preflight result;
 - dispatch/wait exit codes;
-- explicit `scanScope=existing_queue`;
+- actual scan scope (`not_started` or `existing_queue`);
 - explicit `automaticRequeue=false`;
 - `remoteShaRequired=true`;
-- `hostRun=true`.
+- actual `hostRun` state.
 
 Receipts are appended as JSONL to:
 
@@ -217,11 +227,11 @@ host_run=no
 ```text
 workflow_schema=1
 delivery_receipt_records=<n>
-last_delivery_id=<id|none>
+last_delivery_id=<opaque-id|none>
 last_receipt_state=<state|none>
 ```
 
-No file names, host fields, remote paths or network addresses are added to the compact ChatGPT context.
+The delivery ID is opaque; no file names, host fields, remote paths or network addresses are added to the compact ChatGPT context.
 
 ## Safety boundaries
 
