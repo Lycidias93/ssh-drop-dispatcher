@@ -20,7 +20,7 @@ grep -F 'SDD_WORKFLOW_SCHEMA=1' "$SDD" >/dev/null
 grep -F 'dispatch-file <file> --wait' "$SDD" >/dev/null
 grep -F 'schema=SDD_INCIDENT_CONTEXT_V1' "$WORKFLOW" >/dev/null
 grep -F 'SDD_DELIVERY_RECEIPT_V1' "$WORKFLOW" >/dev/null
-grep -F 'scanScope":"existing_queue"' "$WORKFLOW" >/dev/null
+grep -F 'existing_queue true' "$WORKFLOW" >/dev/null
 grep -F 'automaticRequeue":false' "$WORKFLOW" >/dev/null
 ! grep -F 'eval ' "$WORKFLOW" >/dev/null
 ! grep -F -- '--requeue' "$WORKFLOW" >/dev/null
@@ -142,7 +142,7 @@ queue_json=$(run_sdd queue --json)
 printf '%s' "$queue_json" | python -c 'import json,sys; d=json.load(sys.stdin); assert len(d["items"])==1; assert d["items"][0]["state"]=="pending"'
 
 receipt_json=$(run_sdd dispatch-file "${fixture_file##*/}" --wait 10 1 --json)
-printf '%s' "$receipt_json" | python -c 'import json,sys; d=json.load(sys.stdin); assert d["schema"]=="SDD_DELIVERY_RECEIPT_V1"; assert d["state"]=="verified_complete"; assert d["scanScope"]=="existing_queue"; assert d["automaticRequeue"] is False'
+printf '%s' "$receipt_json" | python -c 'import json,sys; d=json.load(sys.stdin); assert d["schema"]=="SDD_DELIVERY_RECEIPT_V1"; assert d["state"]=="verified_complete"; assert d["scanScope"]=="existing_queue"; assert d["automaticRequeue"] is False; assert d["hostRun"] is True; assert d["deliveryId"].startswith("SDD-") and len(d["deliveryId"])==20'
 [ -s "$state/delivery.receipts.jsonl" ]
 
 delivery_id=$(printf '%s' "$receipt_json" | python -c 'import json,sys; print(json.load(sys.stdin)["deliveryId"])')
