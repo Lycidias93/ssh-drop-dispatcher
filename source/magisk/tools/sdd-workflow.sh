@@ -54,30 +54,36 @@ record_for_file(){
   printf '%s|%s' "$(base_name "$f")" "$pair"
 }
 
+record_sha256(){
+  rec=$1
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "$rec" | sha256sum | awk '{print $1}'
+  elif [ -x /system/bin/toybox ] && /system/bin/toybox --list 2>/dev/null | grep -qx sha256sum; then
+    printf '%s' "$rec" | /system/bin/toybox sha256sum | awk '{print $1}'
+  else
+    return 1
+  fi
+}
+
 delivery_id_from_record(){
   rec=$1
-  pair=${rec##*|}
-  crc=${pair%%:*}
-  bytes=${pair#*:}
-  case "$crc:$bytes" in *[!0-9:]*) return 1;; esac
-  printf 'SDD-%s-%s' "$crc" "$bytes"
+  digest=$(record_sha256 "$rec" 2>/dev/null || true)
+  printf '%s' "$digest" | grep -Eq '^[0-9a-fA-F]{64}$' || return 1
+  short=$(printf '%s' "$digest" | sed 's/^\(.\{16\}\).*/\1/')
+  printf 'SDD-%s' "$short"
 }
 
 record_from_delivery_id(){
   id=$1
-  case "$id" in SDD-*-*) ;; *) return 1;; esac
-  body=${id#SDD-}
-  crc=${body%%-*}
-  bytes=${body#*-}
-  case "$crc:$bytes" in *[!0-9:]*) return 1;; esac
-  needle="|$crc:$bytes"
+  printf '%s' "$id" | grep -Eq '^SDD-[0-9a-fA-F]{16}$' || return 1
   for db in "$COMPLETE_DB" "$DONE_DB" "$INFLIGHT_DB" "$QUAR_DB" "$FAIL_DB"; do
     [ -f "$db" ] || continue
-    line=$(grep -F "$needle" "$db" 2>/dev/null | sed -n '1p' || true)
-    if [ -n "$line" ]; then
-      printf '%s' "$line" | sed 's/|target=.*//;s/|reason=.*//;s/|policy=.*//'
-      return 0
-    fi
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ -n "$line" ] || continue
+      rec=$(printf '%s' "$line" | sed 's/|target=.*//;s/|reason=.*//;s/|policy=.*//')
+      [ -n "$rec" ] || continue
+      [ "$(delivery_id_from_record "$rec" 2>/dev/null || true)" = "$id" ] && { printf '%s' "$rec"; return 0; }
+    done < "$db"
   done
   dir=$(scan_dir)
   if [ -d "$dir" ]; then
@@ -113,7 +119,7 @@ set_trace_identity(){
   TRACE_ID=
   TRACE_LOCAL_EXISTS=no
   case "$in" in
-    SDD-*-*)
+    SDD-*)
       TRACE_ID=$in
       TRACE_REC=$(record_from_delivery_id "$in" 2>/dev/null || true)
       [ -n "$TRACE_REC" ] || return 1
@@ -231,7 +237,7 @@ trace_json(){
   printf '],"outcome":"success"}\n'
 }
 
-trace(){ [ "$FORMAT" = json ] && trace_json "$1" || trace_env "$1"; }
+trace(){ if [ "$FORMAT" = json ]; then trace_json "$1"; else trace_env "$1"; fi; }
 
 queue_items(){
   limit=$(safe_limit "${1:-20}")
@@ -368,19 +374,19 @@ preflight_cmd(){
 }
 
 write_receipt(){
-  id=$1; file=$2; rec=$3; targets=$4; started=$5; ended=$6; state=$7; preflight=$8; dispatch_rc=$9; shift 9; wait_rc=$1
+  id=$1; file=$2; rec=$3; targets=$4; started=$5; ended=$6; state=$7; preflight=$8; dispatch_rc=$9; shift 9; wait_rc=$1; scan_scope=$2; host_run=$3
   mkdir -p "$STATE_DIR" >/dev/null 2>&1 || true
   {
-    printf '{"schema":"SDD_DELIVERY_RECEIPT_V1","deliveryId":'; json_string "$id"; printf ',"file":'; json_string "$file"; printf ',"record":'; json_string "$rec"; printf ',"targets":'; json_string "$targets"; printf ',"startedEpoch":%s,"endedEpoch":%s,"state":' "$started" "$ended"; json_string "$state"; printf ',"preflight":'; json_string "$preflight"; printf ',"dispatchRc":%s,"waitRc":%s,"scanScope":"existing_queue","automaticRequeue":false,"remoteShaRequired":true,"hostRun":true}\n' "$dispatch_rc" "$wait_rc"
+    printf '{"schema":"SDD_DELIVERY_RECEIPT_V1","deliveryId":'; json_string "$id"; printf ',"file":'; json_string "$file"; printf ',"record":'; json_string "$rec"; printf ',"targets":'; json_string "$targets"; printf ',"startedEpoch":%s,"endedEpoch":%s,"state":' "$started" "$ended"; json_string "$state"; printf ',"preflight":'; json_string "$preflight"; printf ',"dispatchRc":%s,"waitRc":%s,"scanScope":' "$dispatch_rc" "$wait_rc"; json_string "$scan_scope"; printf ',"automaticRequeue":false,"remoteShaRequired":true,"hostRun":%s}\n' "$host_run"
   } >> "$RECEIPT_DB"
 }
 
 emit_receipt(){
-  id=$1; file=$2; rec=$3; targets=$4; started=$5; ended=$6; state=$7; preflight=$8; dispatch_rc=$9; shift 9; wait_rc=$1
+  id=$1; file=$2; rec=$3; targets=$4; started=$5; ended=$6; state=$7; preflight=$8; dispatch_rc=$9; shift 9; wait_rc=$1; scan_scope=$2; host_run=$3
   if [ "$FORMAT" = json ]; then
-    printf '{"schema":"SDD_DELIVERY_RECEIPT_V1","deliveryId":'; json_string "$id"; printf ',"file":'; json_string "$file"; printf ',"record":'; json_string "$rec"; printf ',"targets":'; json_string "$targets"; printf ',"startedEpoch":%s,"endedEpoch":%s,"state":' "$started" "$ended"; json_string "$state"; printf ',"preflight":'; json_string "$preflight"; printf ',"dispatchRc":%s,"waitRc":%s,"scanScope":"existing_queue","automaticRequeue":false,"remoteShaRequired":true,"hostRun":true}\n' "$dispatch_rc" "$wait_rc"
+    printf '{"schema":"SDD_DELIVERY_RECEIPT_V1","deliveryId":'; json_string "$id"; printf ',"file":'; json_string "$file"; printf ',"record":'; json_string "$rec"; printf ',"targets":'; json_string "$targets"; printf ',"startedEpoch":%s,"endedEpoch":%s,"state":' "$started" "$ended"; json_string "$state"; printf ',"preflight":'; json_string "$preflight"; printf ',"dispatchRc":%s,"waitRc":%s,"scanScope":' "$dispatch_rc" "$wait_rc"; json_string "$scan_scope"; printf ',"automaticRequeue":false,"remoteShaRequired":true,"hostRun":%s}\n' "$host_run"
   else
-    echo "schema=SDD_DELIVERY_RECEIPT_V1"; echo "delivery_id=$id"; echo "file=$file"; echo "record=$rec"; echo "targets=$targets"; echo "started_epoch=$started"; echo "ended_epoch=$ended"; echo "state=$state"; echo "preflight=$preflight"; echo "dispatch_rc=$dispatch_rc"; echo "wait_rc=$wait_rc"; echo "scan_scope=existing_queue"; echo "automatic_requeue=no"; echo "remote_sha_required=yes"; echo "host_run=yes"; echo "RESULT: SDD_DELIVERY_RECEIPT_DONE state=$state exit_code=$wait_rc"
+    echo "schema=SDD_DELIVERY_RECEIPT_V1"; echo "delivery_id=$id"; echo "file=$file"; echo "record=$rec"; echo "targets=$targets"; echo "started_epoch=$started"; echo "ended_epoch=$ended"; echo "state=$state"; echo "preflight=$preflight"; echo "dispatch_rc=$dispatch_rc"; echo "wait_rc=$wait_rc"; echo "scan_scope=$scan_scope"; echo "automatic_requeue=no"; echo "remote_sha_required=yes"; echo "host_run=$host_run"; echo "RESULT: SDD_DELIVERY_RECEIPT_DONE state=$state exit_code=$wait_rc"
   fi
 }
 
@@ -394,8 +400,9 @@ dispatch_file_cmd(){
   preflight_collect "$in"; pre_rc=$?
   if [ "$pre_rc" -ne 0 ]; then
     ended=$(date +%s 2>/dev/null || echo "$started")
-    write_receipt "${PREFLIGHT_ID:-unknown}" "${PREFLIGHT_BASE:-$(base_name "$in")}" "${PREFLIGHT_REC:-unknown}" "${PREFLIGHT_TARGETS:-}" "$started" "$ended" blocked_preflight "$PREFLIGHT_REASON" 0 "$pre_rc"
-    emit_receipt "${PREFLIGHT_ID:-unknown}" "${PREFLIGHT_BASE:-$(base_name "$in")}" "${PREFLIGHT_REC:-unknown}" "${PREFLIGHT_TARGETS:-}" "$started" "$ended" blocked_preflight "$PREFLIGHT_REASON" 0 "$pre_rc"
+    [ "${PREFLIGHT_HOST_RUN:-no}" = yes ] && receipt_host_run=true || receipt_host_run=false
+    write_receipt "${PREFLIGHT_ID:-unknown}" "${PREFLIGHT_BASE:-$(base_name "$in")}" "${PREFLIGHT_REC:-unknown}" "${PREFLIGHT_TARGETS:-}" "$started" "$ended" blocked_preflight "$PREFLIGHT_REASON" 0 "$pre_rc" not_started "$receipt_host_run"
+    emit_receipt "${PREFLIGHT_ID:-unknown}" "${PREFLIGHT_BASE:-$(base_name "$in")}" "${PREFLIGHT_REC:-unknown}" "${PREFLIGHT_TARGETS:-}" "$started" "$ended" blocked_preflight "$PREFLIGHT_REASON" 0 "$pre_rc" not_started "$receipt_host_run"
     return "$pre_rc"
   fi
   "$SERVICE" --scan-once "cli_dispatch_file_${PREFLIGHT_ID}" >/dev/null 2>&1
@@ -408,8 +415,8 @@ dispatch_file_cmd(){
   fi
   ended=$(date +%s 2>/dev/null || echo "$started")
   [ "$wait_rc" -eq 0 ] && state=verified_complete || state=failed
-  write_receipt "$PREFLIGHT_ID" "$PREFLIGHT_BASE" "$PREFLIGHT_REC" "$PREFLIGHT_TARGETS" "$started" "$ended" "$state" READY "$dispatch_rc" "$wait_rc"
-  emit_receipt "$PREFLIGHT_ID" "$PREFLIGHT_BASE" "$PREFLIGHT_REC" "$PREFLIGHT_TARGETS" "$started" "$ended" "$state" READY "$dispatch_rc" "$wait_rc"
+  write_receipt "$PREFLIGHT_ID" "$PREFLIGHT_BASE" "$PREFLIGHT_REC" "$PREFLIGHT_TARGETS" "$started" "$ended" "$state" READY "$dispatch_rc" "$wait_rc" existing_queue true
+  emit_receipt "$PREFLIGHT_ID" "$PREFLIGHT_BASE" "$PREFLIGHT_REC" "$PREFLIGHT_TARGETS" "$started" "$ended" "$state" READY "$dispatch_rc" "$wait_rc" existing_queue true
   return "$wait_rc"
 }
 
