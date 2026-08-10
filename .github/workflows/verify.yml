@@ -54,15 +54,43 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 tools/build_rc4_webui.py --output /tmp/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip | tee /tmp/rc4-build.log
+          mkdir -p /tmp/sdd-rc4-handoff
+          module_zip=/tmp/sdd-rc4-handoff/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip
+          python3 tools/build_rc4_webui.py --output "$module_zip" | tee /tmp/rc4-build.log
           grep -Fq 'RESULT: SDD_RC4_WEBUI_BUILD_DONE outcome=success delivery_core_changed=no workflow_exit_code=0' /tmp/rc4-build.log
-          unzip -tq /tmp/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip >/dev/null
-          unzip -p /tmp/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip module.prop | grep -Fxq 'version=4.13.0-verify-owner-rc4'
-          unzip -p /tmp/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip module.prop | grep -Fxq 'versionCode=4130004'
-          unzip -Z1 /tmp/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip | grep -Fxq 'bin/webui-server-arm64'
-          unzip -Z1 /tmp/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip | grep -Fxq 'bin/module-control'
-          unzip -Z1 /tmp/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip | grep -Fxq 'webroot/app.js'
-          unzip -Z1 /tmp/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip | grep -Fxq 'webroot/app.css'
+          unzip -tq "$module_zip" >/dev/null
+          unzip -p "$module_zip" module.prop | grep -Fxq 'version=4.13.0-verify-owner-rc4'
+          unzip -p "$module_zip" module.prop | grep -Fxq 'versionCode=4130004'
+          unzip -Z1 "$module_zip" | grep -Fxq 'bin/webui-server-arm64'
+          unzip -Z1 "$module_zip" | grep -Fxq 'bin/module-control'
+          unzip -Z1 "$module_zip" | grep -Fxq 'webroot/app.js'
+          unzip -Z1 "$module_zip" | grep -Fxq 'webroot/app.css'
+          unzip -Z1 "$module_zip" | grep -Fxq 'webroot/sdd-ui.js'
+          unzip -Z1 "$module_zip" | grep -Fxq 'webroot/sdd-ui.css'
+          module_sha=$(sha256sum "$module_zip" | awk '{print $1}')
+          module_bytes=$(wc -c < "$module_zip" | tr -d ' ')
+          {
+            echo 'schema=sdd-rc4-webui-build-manifest-v1'
+            echo 'version=4.13.0-verify-owner-rc4'
+            echo 'versionCode=4130004'
+            echo 'webui_core_version=0.2.2'
+            echo 'webui_core_commit=5b8e412428cd04b1cf98a1fc0e03269580b60d71'
+            echo 'delivery_core_service_blob=c19b1dfb315cf53e4db9d43fe069d3d56d8f6337'
+            echo "module_zip=$(basename "$module_zip")"
+            echo "module_bytes=$module_bytes"
+            echo "module_sha256=$module_sha"
+            echo 'delivery_core_changed=no'
+            echo 'installed_runtime_verified=no'
+          } > /tmp/sdd-rc4-handoff/rc4-build-manifest.txt
+
+      - name: Upload RC4 candidate bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssh-drop-dispatcher-rc4-webui-candidate
+          path: /tmp/sdd-rc4-handoff/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
 
       - name: Verify module metadata
         shell: bash
