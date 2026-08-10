@@ -12,9 +12,13 @@ LOG_FILE=${SDD_LOG_FILE:-$STATE_DIR/log/dispatch.log}
 CONFIG_TOOL=${SDD_CONFIG_TOOL:-$STATE_DIR/tools/dispatch-config-v2.sh}
 DOCTOR_TOOL=${SDD_DOCTOR_TOOL:-$STATE_DIR/tools/pidd-doctor.sh}
 TERMUX_INSTALL_TOOL=${SDD_TERMUX_INSTALL_TOOL:-$STATE_DIR/tools/sdd-termux-install.sh}
+WORKFLOW_TOOL=${SDD_WORKFLOW_TOOL:-$STATE_DIR/tools/sdd-workflow.sh}
 TERMUX_BIN=${SDD_TERMUX_BIN:-/data/data/com.termux/files/usr/bin}
-SDD_CLI_SCHEMA=2
+SDD_CLI_SCHEMA=3
 SDD_CHATGPT_CONTEXT_SCHEMA=1
+SDD_WORKFLOW_SCHEMA=1
+SDD_DELIVERY_RECEIPT_SCHEMA=1
+SDD_INCIDENT_CONTEXT_SCHEMA=1
 FORMAT=env
 NO_PROMPT=0
 ARGC=0; ARG1=; ARG2=; ARG3=; ARG4=; ARG5=; ARG6=
@@ -25,12 +29,17 @@ SELF_DIR=${0%/*}
 
 usage(){
   cat <<'EOF_USAGE'
-SSH Drop Dispatcher CLI v2
+SSH Drop Dispatcher CLI v3
 Usage: sdd [--env|--json] [--no-prompt] <command> [args]
 Commands: version, capabilities, status, targets, target test <name>, dispatch,
-  delivery status <file>, delivery wait <file> [timeout] [interval], requeue <file>,
-  logs [lines], doctor [--chatgpt], chatgpt-context, snapshot, explain <code>,
-  config [compat dispatch-config args], install-termux, bridge-status, help
+  delivery status <file>, delivery wait <file> [timeout] [interval],
+  delivery trace <file|delivery-id>, delivery preflight <file>,
+  trace <file|delivery-id>, inspect <file|delivery-id>, queue [limit],
+  failures [limit], quarantine [limit], preflight <file>,
+  dispatch-file <file> --wait [timeout] [interval], incident [file|delivery-id],
+  requeue <file>, logs [lines], doctor [--chatgpt], chatgpt-context, snapshot,
+  explain <code>, config [compat dispatch-config args], install-termux,
+  bridge-status, help
 EOF_USAGE
 }
 
@@ -41,15 +50,21 @@ add_arg(){
 
 while [ "$#" -gt 0 ]; do case "$1" in --json) FORMAT=json; shift;; --env) FORMAT=env; shift;; --no-prompt) NO_PROMPT=1; shift;; --help|-h) set -- help; break;; --) shift; break;; *) break;; esac; done
 cmd=${1:-help}; [ "$#" -gt 0 ] && shift || true
-for arg in "$@"; do case "$arg" in --json) FORMAT=json;; --env) FORMAT=env;; --no-prompt) NO_PROMPT=1;; --chatgpt) add_arg "$arg";; --*) usage_error "unknown_option_$arg"; exit 64;; *) add_arg "$arg";; esac; done
+for arg in "$@"; do case "$arg" in --json) FORMAT=json;; --env) FORMAT=env;; --no-prompt) NO_PROMPT=1;; --chatgpt|--wait) add_arg "$arg";; --*) usage_error "unknown_option_$arg"; exit 64;; *) add_arg "$arg";; esac; done
 
 find_doctor(){ [ -x "$DOCTOR_TOOL" ] && { printf '%s' "$DOCTOR_TOOL"; return; }; [ -x "$MODDIR/tools/pidd-doctor.sh" ] && printf '%s' "$MODDIR/tools/pidd-doctor.sh"; }
 find_bridge(){ [ -x "$TERMUX_INSTALL_TOOL" ] && { printf '%s' "$TERMUX_INSTALL_TOOL"; return; }; [ -x "$MODDIR/tools/sdd-termux-install.sh" ] && printf '%s' "$MODDIR/tools/sdd-termux-install.sh"; }
+find_workflow(){ [ -x "$WORKFLOW_TOOL" ] && { printf '%s' "$WORKFLOW_TOOL"; return; }; [ -x "$MODDIR/tools/sdd-workflow.sh" ] && printf '%s' "$MODDIR/tools/sdd-workflow.sh"; }
 find_config(){
   [ -x "$CONFIG_TOOL" ] && { printf '%s' "$CONFIG_TOOL"; return; }
   [ -x "$MODDIR/tools/dispatch-config-v2.sh" ] && { printf '%s' "$MODDIR/tools/dispatch-config-v2.sh"; return; }
   [ -x "$STATE_DIR/tools/dispatch-config.sh" ] && { printf '%s' "$STATE_DIR/tools/dispatch-config.sh"; return; }
   [ -x "$MODDIR/tools/dispatch-config.sh" ] && printf '%s' "$MODDIR/tools/dispatch-config.sh"
+}
+run_workflow(){
+  tool=$(find_workflow)
+  [ -n "$tool" ] || { echo "sdd_cli=FAIL reason=workflow_tool_missing" >&2; echo "RESULT: SDD_CLI_DONE command=workflow outcome=unavailable exit_code=69" >&2; return 69; }
+  SDD_FORMAT="$FORMAT" "$tool" "$@"
 }
 
 case "$cmd" in
@@ -61,7 +76,35 @@ case "$cmd" in
   dispatch) [ "$ARGC" -eq 0 ] || { usage_error dispatch_arguments; exit 64; }; run_service dispatch --dispatch-now ;;
   delivery)
     [ "$ARGC" -ge 2 ] || { usage_error delivery_arguments; exit 64; }
-    case "$ARG1:$ARGC" in status:2) run_service delivery-status --delivery-status "$ARG2";; wait:2) run_service delivery-wait --wait-delivery "$ARG2";; wait:3) run_service delivery-wait --wait-delivery "$ARG2" "$ARG3";; wait:4) run_service delivery-wait --wait-delivery "$ARG2" "$ARG3" "$ARG4";; *) usage_error delivery_arguments; exit 64;; esac ;;
+    case "$ARG1:$ARGC" in
+      status:2) run_service delivery-status --delivery-status "$ARG2" ;;
+      wait:2) run_service delivery-wait --wait-delivery "$ARG2" ;;
+      wait:3) run_service delivery-wait --wait-delivery "$ARG2" "$ARG3" ;;
+      wait:4) run_service delivery-wait --wait-delivery "$ARG2" "$ARG3" "$ARG4" ;;
+      trace:2) run_workflow trace "$ARG2" ;;
+      preflight:2) run_workflow preflight "$ARG2" ;;
+      *) usage_error delivery_arguments; exit 64 ;;
+    esac ;;
+  trace) [ "$ARGC" -eq 1 ] || { usage_error trace_arguments; exit 64; }; run_workflow trace "$ARG1" ;;
+  inspect) [ "$ARGC" -eq 1 ] || { usage_error inspect_arguments; exit 64; }; run_workflow inspect "$ARG1" ;;
+  queue) case "$ARGC" in 0) run_workflow queue;; 1) run_workflow queue "$ARG1";; *) usage_error queue_arguments; exit 64;; esac ;;
+  failures) case "$ARGC" in 0) run_workflow failures;; 1) run_workflow failures "$ARG1";; *) usage_error failures_arguments; exit 64;; esac ;;
+  quarantine) case "$ARGC" in 0) run_workflow quarantine;; 1) run_workflow quarantine "$ARG1";; *) usage_error quarantine_arguments; exit 64;; esac ;;
+  preflight) [ "$ARGC" -eq 1 ] || { usage_error preflight_arguments; exit 64; }; run_workflow preflight "$ARG1" ;;
+  dispatch-file)
+    [ "$ARGC" -ge 2 ] && [ "$ARGC" -le 4 ] && [ "$ARG2" = --wait ] || { usage_error dispatch_file_arguments; exit 64; }
+    case "$ARGC" in
+      2) run_workflow dispatch-file "$ARG1" ;;
+      3) run_workflow dispatch-file "$ARG1" "$ARG3" ;;
+      4) run_workflow dispatch-file "$ARG1" "$ARG3" "$ARG4" ;;
+    esac ;;
+  incident)
+    case "$ARGC" in
+      0) run_workflow incident ;;
+      1) [ "$ARG1" = --chatgpt ] && run_workflow incident || run_workflow incident "$ARG1" ;;
+      2) [ "$ARG1" = --chatgpt ] || { usage_error incident_arguments; exit 64; }; run_workflow incident "$ARG2" ;;
+      *) usage_error incident_arguments; exit 64 ;;
+    esac ;;
   requeue) [ "$ARGC" -eq 1 ] || { usage_error requeue_arguments; exit 64; }; run_service requeue --requeue "$ARG1" ;;
   logs) case "$ARGC" in 0) run_service logs --webui-log-tail 160;; 1) run_service logs --webui-log-tail "$ARG1";; *) usage_error logs_arguments; exit 64;; esac ;;
   doctor)
