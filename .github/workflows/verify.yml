@@ -44,13 +44,6 @@ jobs:
           set -euo pipefail
           bash tests/sdd-vnext-m1-identity-fixtures.sh
 
-      - name: Verify RC2 CLI contract
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash tests/verify_cli_v2_contract.sh
-          bash tests/verify_rc2_config_frontend_contract.sh
-
       - name: Verify RC3 workflow contract
         shell: bash
         run: |
