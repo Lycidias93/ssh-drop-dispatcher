@@ -5,6 +5,7 @@ umask 077
 BINDIR=${0%/*}
 MODDIR=${MODULE_DIR:-${BINDIR%/bin}}
 BASE="$BINDIR/module-control-base"
+SH_BIN=${SDD_WEBUI_SH_BIN:-/system/bin/sh}
 PROP="$MODDIR/module.prop"
 STATE_DIR=${MODULE_STATE_DIR:-/data/adb/ssh-drop-dispatcher}
 CONFIG_FILE=${SDD_WEBUI_CONFIG_FILE:-$STATE_DIR/config.env}
@@ -61,7 +62,8 @@ json_field_string() {
 
 if [ "${1:-}" != status ]; then
   [ -x "$BASE" ] || { echo '{"ok":false,"error":"module-control base unavailable"}' >&2; exit 69; }
-  exec "$BASE" "$@"
+  [ -x "$SH_BIN" ] || { echo '{"ok":false,"error":"module-control shell unavailable"}' >&2; exit 69; }
+  exec "$SH_BIN" "$BASE" "$@"
 fi
 
 [ "$#" -eq 1 ] || exit 2
