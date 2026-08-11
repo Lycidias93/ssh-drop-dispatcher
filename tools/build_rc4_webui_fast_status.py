@@ -38,7 +38,7 @@ def verify_stage_fast_status(stage: Path, work: Path) -> None:
         raise RuntimeError("fast_status_marker_missing")
     if 'backend_refresh":"none' not in wrapper_text:
         raise RuntimeError("fast_status_refresh_contract_missing")
-    if 'exec "$BASE" "$@"' not in wrapper_text:
+    if 'exec "$SH_BIN" "$BASE" "$@"' not in wrapper_text:
         raise RuntimeError("fast_status_delegate_missing")
     if "chatgpt-context" in wrapper_text or "run_sdd" in wrapper_text:
         raise RuntimeError("fast_status_heavy_backend_reference")
@@ -78,6 +78,7 @@ def verify_stage_fast_status(stage: Path, work: Path) -> None:
             "MODULE_DIR": str(stage),
             "MODULE_STATE_DIR": str(state),
             "WEBUI_RUNTIME_DIR": str(runtime),
+            "SDD_WEBUI_SH_BIN": "/bin/sh",
             "SDD_WEBUI_CONFIG_FILE": str(state / "config.env"),
             "SDD_WEBUI_TARGET_DIR": str(target_dir),
             "SDD_WEBUI_HEALTH_FILE": str(state / "health.env"),
