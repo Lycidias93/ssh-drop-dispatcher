@@ -1,0 +1,50 @@
+name: RC4 WebUI fast-status candidate
+
+on:
+  push:
+    branches:
+      - rc4-webui-overhaul
+    paths:
+      - source/rc4-webui/module-control-fast-wrapper.sh
+      - tools/build_rc4_webui_fast_status.py
+      - tools/build_rc4_webui.py
+      - source/rc4-webui/**
+      - source/magisk/**
+      - .github/workflows/rc4-webui-fast-status.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+
+      - name: Build RC4 fast-status candidate
+        run: python3 tools/build_rc4_webui_fast_status.py --output dist/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip
+
+      - name: Verify candidate archive
+        run: |
+          set -euo pipefail
+          unzip -t dist/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip
+          test -s dist/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip
+          sha256sum dist/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip | tee dist/sha256.txt
+
+      - name: Upload candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssh-drop-dispatcher-rc4-fast-status-candidate
+          path: |
+            dist/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc4.zip
+            dist/sha256.txt
+          if-no-files-found: error
+          retention-days: 7
