@@ -7,11 +7,13 @@ LATESTARTSERVICE=true
 STATE_DIR=/data/adb/ssh-drop-dispatcher
 RUNTIME_BIN=$STATE_DIR/bin
 TERMUX_INSTALLER=$STATE_DIR/tools/sdd-termux-install.sh
+MODULE_VERSION=$(sed -n 's/^version=//p' "$MODPATH/module.prop" 2>/dev/null | head -n 1)
+[ -n "$MODULE_VERSION" ] || MODULE_VERSION=unknown
 
-ui_print "SSH Drop Dispatcher 4.13.0-verify-owner-rc4"
+ui_print "SSH Drop Dispatcher $MODULE_VERSION"
 ui_print "Runtime SoT: $STATE_DIR"
 ui_print "Author: Lycidias93"
-ui_print "Dispatcher-owned remote verification + CLI v3 workflow + secure standalone WebUI core 0.2.2"
+ui_print "Dispatcher-owned remote verification + CLI v3 workflow + secure standalone WebUI"
 ui_print "Public defaults only: no bundled private targets or keys"
 
 mkdir -p "$STATE_DIR/log" "$STATE_DIR/ssh" "$STATE_DIR/config/targets.d" "$STATE_DIR/tools" "$RUNTIME_BIN" "$STATE_DIR/backups"
