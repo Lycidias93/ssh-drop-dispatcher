@@ -124,7 +124,10 @@ def stage_module(work: Path, fetched: dict[str, Path]) -> Path:
 
     bindir = stage / "bin"
     bindir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(RC4_OVERLAY / "module-control", bindir / "module-control-rc4")
+    # Preserve the already runtime-verified RC4 fast-status composition:
+    # RC5 -> RC4 fast wrapper -> legacy typed base adapter.
+    shutil.copy2(RC4_OVERLAY / "module-control", bindir / "module-control-base")
+    shutil.copy2(RC4_OVERLAY / "module-control-fast-wrapper.sh", bindir / "module-control-rc4")
     shutil.copy2(RC5_OVERLAY / "module-control", bindir / "module-control")
 
     server_dir = work / "server"
@@ -148,7 +151,8 @@ def stage_module(work: Path, fetched: dict[str, Path]) -> Path:
 
     for path in (
         stage / "action.sh", stage / "customize.sh", stage / "service.sh",
-        bindir / "module-control", bindir / "module-control-rc4", output, helper,
+        bindir / "module-control", bindir / "module-control-rc4",
+        bindir / "module-control-base", output, helper,
     ):
         path.chmod(0o755)
 
@@ -158,10 +162,11 @@ def stage_module(work: Path, fetched: dict[str, Path]) -> Path:
 def verify_stage(stage: Path, work: Path) -> None:
     required = [
         "module.prop", "customize.sh", "action.sh", "service.sh",
-        "bin/module-control", "bin/module-control-rc4", "bin/webui-server-arm64",
-        "bin/sdd-webui-v03-helper-arm64", "webroot/index.html", "webroot/app.js",
-        "webroot/app.css", "webroot/v03.js", "webroot/sdd-ui.js", "webroot/sdd-ui.css",
-        "tools/sdd.sh", "tools/sdd-machine.sh", "tools/sdd-workflow.sh", "tools/pidd-config.sh",
+        "bin/module-control", "bin/module-control-rc4", "bin/module-control-base",
+        "bin/webui-server-arm64", "bin/sdd-webui-v03-helper-arm64",
+        "webroot/index.html", "webroot/app.js", "webroot/app.css", "webroot/v03.js",
+        "webroot/sdd-ui.js", "webroot/sdd-ui.css", "tools/sdd.sh",
+        "tools/sdd-machine.sh", "tools/sdd-workflow.sh", "tools/pidd-config.sh",
     ]
     for rel in required:
         path = stage / rel
@@ -178,6 +183,8 @@ def verify_stage(stage: Path, work: Path) -> None:
 
     action = (stage / "action.sh").read_text()
     wrapper = (stage / "bin/module-control").read_text()
+    rc4_wrapper = (stage / "bin/module-control-rc4").read_text()
+    rc4_base = (stage / "bin/module-control-base").read_text()
     index = (stage / "webroot/index.html").read_text()
     extension = (stage / "webroot/sdd-ui.js").read_text()
     if "127.0.0.1:0" not in action or "bootstrap.token" not in action:
@@ -188,6 +195,10 @@ def verify_stage(stage: Path, work: Path) -> None:
         raise RuntimeError("unqualified_android_am_forbidden")
     if "capabilities-v03" not in wrapper or "APPLY TARGETS" not in wrapper or "IMPORT TARGETS" not in wrapper:
         raise RuntimeError("rc5_v03_adapter_contract_missing")
+    if 'status_source":"local_snapshot' not in rc4_wrapper or 'backend_refresh":"none' not in rc4_wrapper:
+        raise RuntimeError("rc4_fast_status_wrapper_missing")
+    if "print_capabilities()" not in rc4_base or "print_status()" not in rc4_base:
+        raise RuntimeError("rc4_base_adapter_missing")
     if "sddTargetCards" not in index or "sdd-ui.js" not in index or "v03.js" not in index:
         raise RuntimeError("rc5_webui_extension_missing")
     if "exec(" in extension or "window.ksu" in extension or "window.apatch" in extension:
@@ -200,6 +211,7 @@ def verify_stage(stage: Path, work: Path) -> None:
     run(["sh", "-n", str(stage / "customize.sh")])
     run(["sh", "-n", str(stage / "bin/module-control")])
     run(["sh", "-n", str(stage / "bin/module-control-rc4")])
+    run(["sh", "-n", str(stage / "bin/module-control-base")])
 
     native_helper = work / "sdd-webui-v03-helper-native"
     native_env = os.environ.copy()
@@ -215,6 +227,9 @@ def verify_stage(stage: Path, work: Path) -> None:
     target_dir = adapter_state / "config" / "targets.d"
     for path in (requests, uploads, target_dir):
         path.mkdir(parents=True, exist_ok=True)
+    (adapter_state / "health.env").write_text(
+        "status=OK\nevent_pending=no\nmain_pid_ok=yes\nwatcher_pid_ok=yes\nwatchdog_pid_ok=yes\n"
+    )
     (target_dir / "pi3.conf").write_text('target_name="pi3"\nenabled="1"\nssh_host="pi3"\nremote_drop="/tmp/drop"\nplatform="linux"\nshell="bash"\nscp_flags=""\nrole="primary"\n')
     (target_dir / "berylax.conf").write_text('target_name="berylax"\nenabled="1"\nssh_host="berylax"\nremote_drop="/tmp/drop"\nplatform="openwrt"\nshell="sh"\nscp_flags="-O"\nrole="router"\n')
     lint_tool = work / "lint-ok.sh"
@@ -232,8 +247,13 @@ def verify_stage(stage: Path, work: Path) -> None:
         "SDD_WEBUI_CONFIG_FILE": str(adapter_state / "config.env"),
         "SDD_WEBUI_QUAR_DB": str(adapter_state / "dispatch.quarantined"),
         "SDD_WEBUI_RECEIPT_DB": str(adapter_state / "delivery.receipts.jsonl"),
+        "SDD_WEBUI_SH_BIN": shutil.which("sh") or "/bin/sh",
     })
     control = ["sh", str(stage / "bin/module-control")]
+    status = json.loads(run(control + ["status"], env=env, capture=True).stdout)
+    runtime = status.get("runtime", {})
+    if runtime.get("status_source") != "local_snapshot" or runtime.get("backend_refresh") != "none":
+        raise RuntimeError("rc5_fast_status_runtime_fixture_mismatch")
     base = run(control + ["capabilities"], env=env, capture=True)
     if json.loads(base.stdout).get("schema") != "root-module-webui.capabilities.v1":
         raise RuntimeError("base_capability_schema_mismatch")
