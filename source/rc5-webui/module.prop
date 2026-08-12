@@ -1,0 +1,7 @@
+id=ssh_drop_dispatcher
+name=SSH Drop Dispatcher
+version=4.13.0-verify-owner-rc5
+versionCode=4130005
+author=Lycidias93
+description=Android/Magisk SSH file-drop dispatcher with dispatcher-owned remote verification, CLI v3 workflow tracing and secure standalone WebUI core 0.3.0 with typed target profiles, preview-before-apply and schema-bound import/export
+updateJson=https://raw.githubusercontent.com/Lycidias93/ssh-drop-dispatcher/main/update.json
