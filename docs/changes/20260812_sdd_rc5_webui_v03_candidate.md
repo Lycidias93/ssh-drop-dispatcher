@@ -8,14 +8,16 @@ Status: repository candidate built and CI-verified; installed-runtime verificati
 - Version: `4.13.0-verify-owner-rc5`
 - VersionCode: `4130005`
 - Branch: `rc5-webui-enhancements`
-- Verified source head: `af578b14837f1403bcf98d91082aa5e4b1efdc33`
-- GitHub Actions run: `31646319199`
-- Inner module ZIP bytes: `3659732`
-- Inner module ZIP SHA-256: `91a8d2b491353b1b1955550e49264bbeb4ffff94af6debacb3c138a187981410`
-- Actions artifact ID: `9160856258`
-- Actions artifact digest: `sha256:157c81e1bd63b1da05d9143677f9d399d65813cf42e04bfcdd161efab2b51d16`
+- Verified implementation head: `272f4535228cb7b190de4556e815c593f215653d`
+- GitHub Actions run: `31646893673`
+- GitHub Actions job: `94282460361`
+- Inner module ZIP bytes: `3659733`
+- Inner module ZIP SHA-256: `618c43535a1b0c7e89c9646bc73bcbe59b8e8579a9702883c654e33f5f10ec63`
+- Actions artifact ID: `9161073241`
+- Actions artifact size: `3660558`
+- Actions artifact digest: `sha256:ae7678e9559e390aec3fa05e5df6246f8c69879c03357ae5708b8ec058b8db59`
 
-The build is deterministic: two independent package passes produced the same module ZIP SHA-256.
+The build is deterministic: two independent package passes produced the same inner module ZIP SHA-256.
 
 ## Shared WebUI foundation
 
@@ -40,6 +42,7 @@ RC5 consumes the v0.3 generic collection/import/export server and frontend while
 - Failed post-apply lint restores the previous target directory.
 - `allow_fallback` remains fail-closed and is written as `0`.
 - Existing target metadata needed by the dispatcher is normalized and preserved: target name, enabled state, aliases, SSH user/alias/port references, remote drop, platform, shell, SCP mode and role.
+- Target-name validation is aligned with the canonical Dispatcher lint contract (`[a-z0-9_]+`).
 - Private-key bytes, tokens and arbitrary shell commands are not exposed by the editor or export.
 
 ## Preserved RC4 / delivery contracts
@@ -54,7 +57,7 @@ The hardened Android browser launcher remains based on the RC4 action layer and 
 
 ## CI evidence
 
-Run `31646319199` completed successfully with:
+Run `31646893673` completed successfully with:
 
 - shell syntax and Go formatting guards;
 - dispatcher identity fixtures;
