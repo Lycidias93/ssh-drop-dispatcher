@@ -26,7 +26,7 @@ print_capabilities_v03() {
   printf '{"schema":"root-module-webui.extensions.v1","module":{"id":"ssh_drop_dispatcher","name":"SSH Drop Dispatcher","version":"%s"},' "${MODULE_VERSION:-unknown}"
   printf '"features":{"collections":true,"transfer":true},'
   printf '"collections":[{"name":"targets","label":"Target profiles","description":"Typed Dispatcher target profiles. Verification ownership and arbitrary commands remain outside the editor.","risk":"danger","identity_key":"name","max_records":16,"requires_confirmation":true,"confirmation_text":"APPLY TARGETS","fields":['
-  printf '{"key":"name","label":"Name","description":"Stable lowercase Dispatcher target name.","type":"string","required":true,"max_length":32,"pattern":"^[a-z0-9_-]+$","export_policy":"public"},'
+  printf '{"key":"name","label":"Name","description":"Stable lowercase Dispatcher target name.","type":"string","required":true,"max_length":32,"pattern":"^[a-z0-9_]+$","export_policy":"public"},'
   printf '{"key":"enabled","label":"Enabled","type":"boolean","required":true,"export_policy":"public"},'
   printf '{"key":"aliases","label":"Aliases","description":"Comma-separated Dispatcher target aliases; no shell text is accepted.","type":"string","required":true,"max_length":256,"pattern":"^[A-Za-z0-9,._-]*$","export_policy":"public"},'
   printf '{"key":"ssh_user","label":"SSH user","description":"Non-secret username metadata associated with the protected SSH alias.","type":"string","max_length":64,"pattern":"^[A-Za-z0-9._-]*$","export_policy":"reference"},'
