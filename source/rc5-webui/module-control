@@ -11,6 +11,7 @@ STATE_DIR=${MODULE_STATE_DIR:-/data/adb/ssh-drop-dispatcher}
 RUNTIME_DIR=${WEBUI_RUNTIME_DIR:-/data/local/tmp/ssh_drop_dispatcher-webui}
 TARGET_DIR=${SDD_WEBUI_TARGET_DIR:-$STATE_DIR/config/targets.d}
 CONFIG_TOOL=${SDD_WEBUI_V03_CONFIG_TOOL:-$MODDIR/tools/pidd-config.sh}
+SH_BIN=${SDD_WEBUI_SH:-/system/bin/sh}
 MODULE_VERSION=$(sed -n 's/^version=//p' "$PROP" 2>/dev/null | head -n 1)
 
 run_helper() {
@@ -70,6 +71,7 @@ case "${1:-}" in
     ;;
   *)
     [ -x "$BASE" ] || { echo '{"ok":false,"error":"RC4 adapter unavailable"}' >&2; exit 69; }
-    exec "$BASE" "$@"
+    [ -x "$SH_BIN" ] || { echo '{"ok":false,"error":"system shell unavailable"}' >&2; exit 69; }
+    exec "$SH_BIN" "$BASE" "$@"
     ;;
 esac
