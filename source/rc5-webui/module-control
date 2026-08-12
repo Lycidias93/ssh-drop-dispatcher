@@ -1,0 +1,72 @@
+#!/system/bin/sh
+set -u
+umask 077
+
+BINDIR=${0%/*}
+MODDIR=${MODULE_DIR:-${BINDIR%/bin}}
+PROP="$MODDIR/module.prop"
+BASE="$BINDIR/module-control-rc4"
+HELPER=${SDD_WEBUI_V03_HELPER:-$BINDIR/sdd-webui-v03-helper-arm64}
+STATE_DIR=${MODULE_STATE_DIR:-/data/adb/ssh-drop-dispatcher}
+RUNTIME_DIR=${WEBUI_RUNTIME_DIR:-/data/local/tmp/ssh_drop_dispatcher-webui}
+TARGET_DIR=${SDD_WEBUI_TARGET_DIR:-$STATE_DIR/config/targets.d}
+CONFIG_TOOL=${SDD_WEBUI_V03_CONFIG_TOOL:-$MODDIR/tools/pidd-config.sh}
+MODULE_VERSION=$(sed -n 's/^version=//p' "$PROP" 2>/dev/null | head -n 1)
+
+run_helper() {
+  [ -x "$HELPER" ] || { echo '{"ok":false,"error":"v0.3 helper unavailable"}' >&2; return 69; }
+  MODULE_STATE_DIR="$STATE_DIR" WEBUI_RUNTIME_DIR="$RUNTIME_DIR" SDD_WEBUI_TARGET_DIR="$TARGET_DIR" SDD_WEBUI_V03_CONFIG_TOOL="$CONFIG_TOOL" "$HELPER" "$@"
+}
+
+print_capabilities_v03() {
+  printf '{"schema":"root-module-webui.extensions.v1","module":{"id":"ssh_drop_dispatcher","name":"SSH Drop Dispatcher","version":"%s"},' "${MODULE_VERSION:-unknown}"
+  printf '"features":{"collections":true,"transfer":true},'
+  printf '"collections":[{"name":"targets","label":"Target profiles","description":"Typed Dispatcher target profiles. Verification ownership and arbitrary commands remain outside the editor.","risk":"danger","identity_key":"name","max_records":16,"requires_confirmation":true,"confirmation_text":"APPLY TARGETS","fields":['
+  printf '{"key":"name","label":"Name","description":"Stable lowercase Dispatcher target name.","type":"string","required":true,"max_length":32,"pattern":"^[a-z0-9_]+$","export_policy":"public"},'
+  printf '{"key":"enabled","label":"Enabled","type":"boolean","required":true,"export_policy":"public"},'
+  printf '{"key":"ssh_alias","label":"SSH alias","description":"Reference to an existing protected SSH host entry; no private key material is exposed.","type":"string","required":true,"max_length":128,"pattern":"^[A-Za-z0-9._-]+$","export_policy":"reference"},'
+  printf '{"key":"remote_drop","label":"Remote drop","description":"Allowlisted absolute remote directory.","type":"string","required":true,"max_length":256,"pattern":"^/[A-Za-z0-9._/@+:-]+$","export_policy":"reference"},'
+  printf '{"key":"platform","label":"Platform","type":"string","max_length":32,"pattern":"^[A-Za-z0-9._-]*$","export_policy":"public"},'
+  printf '{"key":"shell","label":"Verification shell","type":"enum","required":true,"options":[{"value":"bash","label":"Bash"},{"value":"sh","label":"POSIX sh"}],"export_policy":"public"},'
+  printf '{"key":"scp_mode","label":"SCP mode","type":"enum","required":true,"options":[{"value":"default","label":"Default"},{"value":"legacy","label":"Legacy SCP (-O)"}],"export_policy":"public"},'
+  printf '{"key":"role","label":"Role","type":"string","max_length":64,"pattern":"^[A-Za-z0-9._-]*$","export_policy":"public"}'
+  printf ']}],'
+  printf '"imports":[{"name":"target-profiles","label":"Import target profiles","description":"Validate and preview a schema-bound target profile backup before applying it.","format":"json","risk":"danger","max_bytes":65536,"requires_confirmation":true,"confirmation_text":"IMPORT TARGETS"}],'
+  printf '"exports":[{"name":"target-profiles","label":"Export target profiles","description":"Export typed target profiles and SSH/path references only. No key, token or credential bytes are included.","format":"json","risk":"caution","max_bytes":65536,"filename":"ssh-drop-dispatcher-targets.json","secret_policy":"reference"}]}'
+  printf '\n'
+}
+
+case "${1:-}" in
+  capabilities-v03)
+    [ "$#" -eq 1 ] || exit 2
+    print_capabilities_v03
+    ;;
+  collection-get)
+    [ "$#" -eq 2 ] && [ "$2" = targets ] || exit 2
+    run_helper targets-get
+    ;;
+  collection-preview)
+    [ "$#" -eq 3 ] && [ "$2" = targets ] || exit 2
+    run_helper targets-preview "$3"
+    ;;
+  collection-apply)
+    [ "$#" -eq 3 ] && [ "$2" = targets ] || exit 2
+    run_helper targets-apply "$3"
+    ;;
+  import-preview)
+    [ "$#" -eq 3 ] && [ "$2" = target-profiles ] || exit 2
+    run_helper import-preview "$3"
+    ;;
+  import-apply)
+    [ "$#" -eq 4 ] && [ "$2" = target-profiles ] || exit 2
+    run_helper import-apply "$3" "$4"
+    ;;
+  export)
+    [ "$#" -eq 2 ] && [ "$2" = target-profiles ] || exit 2
+    run_helper export-safe
+    ;;
+  *)
+    [ -x "$BASE" ] || { echo '{"ok":false,"error":"RC4 adapter unavailable"}' >&2; exit 69; }
+    exec "$BASE" "$@"
+    ;;
+esac
