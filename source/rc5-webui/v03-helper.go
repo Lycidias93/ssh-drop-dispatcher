@@ -19,16 +19,21 @@ import (
 const backupSchema = "sdd-target-profiles-backup-v1"
 
 var (
-	nameRE  = regexp.MustCompile(`^[a-z0-9_]{1,32}$`)
-	aliasRE = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
-	pathRE  = regexp.MustCompile(`^/[A-Za-z0-9._/@+:-]{1,255}$`)
-	labelRE = regexp.MustCompile(`^[A-Za-z0-9._-]{0,64}$`)
+	nameRE    = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
+	aliasRE   = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
+	aliasesRE = regexp.MustCompile(`^[A-Za-z0-9,._-]{0,256}$`)
+	userRE    = regexp.MustCompile(`^[A-Za-z0-9._-]{0,64}$`)
+	pathRE    = regexp.MustCompile(`^/[-A-Za-z0-9._/@+:]{1,255}$`)
+	labelRE   = regexp.MustCompile(`^[A-Za-z0-9._-]{0,64}$`)
 )
 
 type target struct {
 	Name       string `json:"name"`
 	Enabled    bool   `json:"enabled"`
+	Aliases    string `json:"aliases"`
+	SSHUser    string `json:"ssh_user"`
 	SSHAlias   string `json:"ssh_alias"`
+	SSHPort    int    `json:"ssh_port"`
 	RemoteDrop string `json:"remote_drop"`
 	Platform   string `json:"platform"`
 	Shell      string `json:"shell"`
@@ -281,8 +286,17 @@ func validateTarget(t target) error {
 	if !nameRE.MatchString(t.Name) {
 		return errors.New("invalid name")
 	}
+	if !aliasesRE.MatchString(t.Aliases) {
+		return errors.New("invalid aliases")
+	}
+	if !userRE.MatchString(t.SSHUser) {
+		return errors.New("invalid ssh_user")
+	}
 	if !aliasRE.MatchString(t.SSHAlias) {
 		return errors.New("invalid ssh_alias")
+	}
+	if t.SSHPort < 1 || t.SSHPort > 65535 {
+		return errors.New("ssh_port must be 1..65535")
 	}
 	if !pathRE.MatchString(t.RemoteDrop) || filepath.Clean(t.RemoteDrop) != t.RemoteDrop {
 		return errors.New("invalid remote_drop")
@@ -363,7 +377,7 @@ func parseTargetFile(path string) (target, error) {
 			return out, err
 		}
 		switch key {
-		case "target_name", "enabled", "ssh_host", "remote_drop", "platform", "shell", "scp_flags", "role", "critical_role":
+		case "target_name", "enabled", "aliases", "ssh_user", "ssh_host", "host", "ssh_port", "remote_drop", "platform", "shell", "scp_flags", "role", "critical_role", "allow_fallback":
 		case "verify", "verify_cmd", "verify_kind", "shell_kind":
 			return out, fmt.Errorf("forbidden legacy verification key %s", key)
 		default:
@@ -383,7 +397,26 @@ func parseTargetFile(path string) (target, error) {
 	default:
 		return out, errors.New("enabled must be 0 or 1")
 	}
+	out.Aliases = values["aliases"]
+	if out.Aliases == "" {
+		out.Aliases = out.Name
+	}
+	out.SSHUser = values["ssh_user"]
 	out.SSHAlias = values["ssh_host"]
+	if out.SSHAlias == "" {
+		out.SSHAlias = values["host"]
+	}
+	out.SSHPort = 22
+	if values["ssh_port"] != "" {
+		port, err := strconv.Atoi(values["ssh_port"])
+		if err != nil {
+			return out, errors.New("ssh_port must be numeric")
+		}
+		out.SSHPort = port
+	}
+	if values["allow_fallback"] != "" && values["allow_fallback"] != "0" {
+		return out, errors.New("allow_fallback must remain 0")
+	}
 	out.RemoteDrop = values["remote_drop"]
 	out.Platform = values["platform"]
 	out.Shell = values["shell"]
@@ -395,9 +428,9 @@ func parseTargetFile(path string) (target, error) {
 	default:
 		return out, errors.New("unsupported scp_flags; only -O is allowed")
 	}
-	out.Role = values["role"]
+	out.Role = values["critical_role"]
 	if out.Role == "" {
-		out.Role = values["critical_role"]
+		out.Role = values["role"]
 	}
 	if err := validateTarget(out); err != nil {
 		return out, fmt.Errorf("%s: %w", filepath.Base(path), err)
@@ -554,12 +587,18 @@ func writeTarget(path string, item target) error {
 	content := strings.Join([]string{
 		`target_name="` + item.Name + `"`,
 		`enabled="` + enabled + `"`,
+		`aliases="` + item.Aliases + `"`,
+		`ssh_user="` + item.SSHUser + `"`,
 		`ssh_host="` + item.SSHAlias + `"`,
+		`host="` + item.SSHAlias + `"`,
+		`ssh_port="` + strconv.Itoa(item.SSHPort) + `"`,
 		`remote_drop="` + item.RemoteDrop + `"`,
 		`platform="` + item.Platform + `"`,
 		`shell="` + item.Shell + `"`,
 		`scp_flags="` + scp + `"`,
+		`critical_role="` + item.Role + `"`,
 		`role="` + item.Role + `"`,
+		`allow_fallback="0"`,
 		"",
 	}, "\n")
 	return os.WriteFile(path, []byte(content), 0600)
