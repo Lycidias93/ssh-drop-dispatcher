@@ -21,7 +21,7 @@ const backupSchema = "sdd-target-profiles-backup-v1"
 var (
 	nameRE    = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
 	aliasRE   = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
-	aliasesRE = regexp.MustCompile(`^[A-Za-z0-9,._ -]{0,256}$`)
+	aliasesRE = regexp.MustCompile(`^[A-Za-z0-9,._-]{0,256}$`)
 	userRE    = regexp.MustCompile(`^[A-Za-z0-9._-]{0,64}$`)
 	pathRE    = regexp.MustCompile(`^/[-A-Za-z0-9._/@+:]{1,255}$`)
 	labelRE   = regexp.MustCompile(`^[A-Za-z0-9._-]{0,64}$`)
@@ -397,7 +397,7 @@ func parseTargetFile(path string) (target, error) {
 	default:
 		return out, errors.New("enabled must be 0 or 1")
 	}
-	out.Aliases = values["aliases"]
+	out.Aliases = canonicalAliases(values["aliases"])
 	if out.Aliases == "" {
 		out.Aliases = out.Name
 	}
@@ -436,6 +436,11 @@ func parseTargetFile(path string) (target, error) {
 		return out, fmt.Errorf("%s: %w", filepath.Base(path), err)
 	}
 	return out, nil
+}
+
+func canonicalAliases(value string) string {
+	parts := strings.FieldsFunc(value, func(r rune) bool { return r == ' ' || r == ',' })
+	return strings.Join(parts, ",")
 }
 
 func shellScalar(value string) (string, error) {
