@@ -21,7 +21,7 @@ const backupSchema = "sdd-target-profiles-backup-v1"
 var (
 	nameRE    = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
 	aliasRE   = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
-	aliasesRE = regexp.MustCompile(`^[A-Za-z0-9,._-]{0,256}$`)
+	aliasesRE = regexp.MustCompile(`^[A-Za-z0-9,._ -]{0,256}$`)
 	userRE    = regexp.MustCompile(`^[A-Za-z0-9._-]{0,64}$`)
 	pathRE    = regexp.MustCompile(`^/[-A-Za-z0-9._/@+:]{1,255}$`)
 	labelRE   = regexp.MustCompile(`^[A-Za-z0-9._-]{0,64}$`)
