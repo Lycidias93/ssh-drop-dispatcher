@@ -1,0 +1,114 @@
+name: release-v4.13.0
+
+on:
+  workflow_run:
+    workflows:
+      - verify
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Checkout verified main commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.HEAD_SHA }}
+
+      - name: Check release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fxq 'version=4.13.0' source/magisk/module.prop
+          grep -Fxq 'versionCode=4130007' source/magisk/module.prop
+          grep -Fxq 'version=4.13.0' source/stable-v4.13.0/module.prop
+          grep -Fxq 'versionCode=4130007' source/stable-v4.13.0/module.prop
+          grep -Fxq 'template_commit=81678604122636ad87a0f6d48eac1262a67154a4' webui-core.lock
+          grep -Fxq 'core_version=0.3.0' webui-core.lock
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('update.json').read_text())
+          assert data['version'] == '4.13.0'
+          assert data['versionCode'] == 4130007
+          assert data['zipUrl'].endswith('/v4.13.0/ssh-drop-dispatcher-magisk-v4.13.0.zip')
+          PY
+          test -s RELEASE_NOTES_V4.13.0.md
+
+      - name: Check whether release already exists
+        id: existing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view v4.13.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'exists=yes' >> "$GITHUB_OUTPUT"
+          else
+            echo 'exists=no' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build exact stable promotion
+        if: steps.existing.outputs.exists == 'no'
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v gh >/dev/null
+          mkdir -p /tmp/sdd-release-v4130
+          module_zip=/tmp/sdd-release-v4130/ssh-drop-dispatcher-magisk-v4.13.0.zip
+          python3 tools/build_v4130_stable.py --output "$module_zip" | tee /tmp/v4130-release-build.log
+          grep -Fq 'RESULT: SDD_V4130_STABLE_BUILD_DONE outcome=success workflow_exit_code=0' /tmp/v4130-release-build.log
+          grep -Fq 'stable_equivalence=only_module_prop_diff' /tmp/v4130-release-build.log
+          grep -Fq 'accepted_rc6_sha256=31ed930fc222d7879e12c8f3f83516b6e4793ae995991121dfb39b8610dccdae' /tmp/v4130-release-build.log
+          unzip -tq "$module_zip" >/dev/null
+          unzip -p "$module_zip" module.prop | grep -Fxq 'version=4.13.0'
+          unzip -p "$module_zip" module.prop | grep -Fxq 'versionCode=4130007'
+          sha256sum "$module_zip" | sed 's#/tmp/sdd-release-v4130/##' > /tmp/sdd-release-v4130/SHA256SUMS
+
+      - name: Publish stable GitHub release
+        if: steps.existing.outputs.exists == 'no'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create v4.13.0 \
+            /tmp/sdd-release-v4130/ssh-drop-dispatcher-magisk-v4.13.0.zip \
+            /tmp/sdd-release-v4130/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$HEAD_SHA" \
+            --title 'SSH Drop Dispatcher v4.13.0' \
+            --notes-file RELEASE_NOTES_V4.13.0.md \
+            --latest
+
+      - name: Verify published release
+        if: steps.existing.outputs.exists == 'no'
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_json=$(gh release view v4.13.0 --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease,targetCommitish,assets)
+          RELEASE_JSON="$release_json" python3 - <<'PY'
+          import json, os
+          data = json.loads(os.environ['RELEASE_JSON'])
+          assert data['tagName'] == 'v4.13.0'
+          assert data['isDraft'] is False
+          assert data['isPrerelease'] is False
+          names = {asset['name'] for asset in data['assets']}
+          assert 'ssh-drop-dispatcher-magisk-v4.13.0.zip' in names
+          assert 'SHA256SUMS' in names
+          PY
+          echo 'RESULT: SDD_V4130_PUBLIC_RELEASE_DONE outcome=success workflow_exit_code=0'
+
+      - name: Release already exists
+        if: steps.existing.outputs.exists == 'yes'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'release_v4130=already_present'
