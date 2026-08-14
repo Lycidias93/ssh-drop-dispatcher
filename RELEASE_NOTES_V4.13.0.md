@@ -17,13 +17,15 @@ Stable promotion of the fully verified `4.13.0-verify-owner-rc6` runtime.
 
 - Stable version: `4.13.0`
 - Stable versionCode: `4130007`
+- Stable ZIP SHA-256: `d9a59f65f67981fdc397aeab793607910431fc444a06eceac7dae84719a5580a`
 - Accepted runtime: `4.13.0-verify-owner-rc6`
 - Accepted RC6 ZIP SHA-256: `31ed930fc222d7879e12c8f3f83516b6e4793ae995991121dfb39b8610dccdae`
 - Accepted source commit: `dc78829e5e3e4be8794ff7441730d8b843a25932`
 - Accepted Pixel runtime marker: `RESULT: CG_INSTALLED_RUNTIME_VERIFY_DONE outcome=success workflow_exit_code=0`
 - Shared WebUI Core: `0.3.0` at `81678604122636ad87a0f6d48eac1262a67154a4`
+- Stable promotion CI: workflow run `31850598193` PASS
 
-The stable build is generated deterministically from the accepted RC6 payload. CI requires the rebuilt RC6 package to match the accepted RC6 SHA-256 exactly and requires the stable ZIP to differ from that package only in `module.prop`. The versionCode is incremented from RC6 (`4130006`) to stable (`4130007`) so installed RC builds can upgrade normally.
+The stable build is generated deterministically from the accepted RC6 payload. CI first rebuilds the RC6 package and requires the exact accepted RC6 SHA-256, then requires the stable ZIP to differ from that package only in `module.prop`. The versionCode is incremented from RC6 (`4130006`) to stable (`4130007`) so installed RC builds can upgrade normally.
 
 ## Verified runtime state
 
