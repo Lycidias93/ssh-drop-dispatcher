@@ -7,6 +7,7 @@ on:
       - rc4-webui-overhaul
       - rc5-webui-enhancements
       - rc6-webui-ux
+      - release/v4.13.0-stable
   pull_request:
     branches:
       - main
@@ -188,16 +189,68 @@ jobs:
           retention-days: 14
           compression-level: 0
 
+      - name: Build v4.13.0 stable promotion candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/sdd-v4130-stable
+          module_zip=/tmp/sdd-v4130-stable/ssh-drop-dispatcher-magisk-v4.13.0.zip
+          python3 tools/build_v4130_stable.py --output "$module_zip" | tee /tmp/v4130-stable-build.log
+          grep -Fq 'RESULT: SDD_V4130_STABLE_BUILD_DONE outcome=success workflow_exit_code=0' /tmp/v4130-stable-build.log
+          grep -Fq 'stable_equivalence=only_module_prop_diff' /tmp/v4130-stable-build.log
+          grep -Fq 'accepted_rc6_sha256=31ed930fc222d7879e12c8f3f83516b6e4793ae995991121dfb39b8610dccdae' /tmp/v4130-stable-build.log
+          unzip -tq "$module_zip" >/dev/null
+          unzip -p "$module_zip" module.prop | grep -Fxq 'version=4.13.0'
+          unzip -p "$module_zip" module.prop | grep -Fxq 'versionCode=4130007'
+          ! unzip -p "$module_zip" module.prop | grep -Fq 'verify-owner'
+          module_sha=$(sha256sum "$module_zip" | awk '{print $1}')
+          module_bytes=$(wc -c < "$module_zip" | tr -d ' ')
+          {
+            echo 'schema=sdd-v4130-stable-build-manifest-v1'
+            echo 'version=4.13.0'
+            echo 'versionCode=4130007'
+            echo 'accepted_runtime=4.13.0-verify-owner-rc6'
+            echo 'accepted_rc6_sha256=31ed930fc222d7879e12c8f3f83516b6e4793ae995991121dfb39b8610dccdae'
+            echo 'webui_core_version=0.3.0'
+            echo 'webui_core_commit=81678604122636ad87a0f6d48eac1262a67154a4'
+            echo 'stable_equivalence=only_module_prop_diff'
+            echo "module_zip=$(basename "$module_zip")"
+            echo "module_bytes=$module_bytes"
+            echo "module_sha256=$module_sha"
+            echo 'delivery_core_changed=no'
+            echo 'installed_runtime_verified_via_rc6=yes'
+          } > /tmp/sdd-v4130-stable/stable-build-manifest.txt
+
+      - name: Upload v4.13.0 stable candidate bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssh-drop-dispatcher-v4.13.0-stable-candidate
+          path: /tmp/sdd-v4130-stable/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
       - name: Verify module metadata
         shell: bash
         run: |
           set -euo pipefail
           test -s source/magisk/module.prop
-          grep -Eq '^id=[A-Za-z0-9._-]+$' source/magisk/module.prop
-          grep -Eq '^version=.+$' source/magisk/module.prop
-          grep -Eq '^versionCode=[0-9]+$' source/magisk/module.prop
+          grep -Fxq 'id=ssh_drop_dispatcher' source/magisk/module.prop
+          grep -Fxq 'version=4.13.0' source/magisk/module.prop
+          grep -Fxq 'versionCode=4130007' source/magisk/module.prop
+          grep -Fxq 'version=4.13.0' source/stable-v4.13.0/module.prop
+          grep -Fxq 'versionCode=4130007' source/stable-v4.13.0/module.prop
           python3 -m json.tool update.json >/dev/null
           python3 -m json.tool update-rc.json >/dev/null
+
+      - name: Verify WebUI core lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fxq 'template_repository=Lycidias93/android-root-module-webui-template' webui-core.lock
+          grep -Fxq 'template_commit=81678604122636ad87a0f6d48eac1262a67154a4' webui-core.lock
+          grep -Fxq 'core_version=0.3.0' webui-core.lock
+          grep -Fxq 'core_version_blob=0d91a54c7d439e84e3dd17d3594f1b2b6737f430' webui-core.lock
 
       - name: Verify tracked release archives
         shell: bash
