@@ -9,6 +9,7 @@ import sys
 import tempfile
 import zipfile
 
+sys.dont_write_bytecode = True
 import build_rc6_webui as rc6
 
 ROOT = Path(__file__).resolve().parents[1]
