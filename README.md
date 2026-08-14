@@ -4,89 +4,96 @@
 
 # SSH Drop Dispatcher
 
-SSH Drop Dispatcher is an Android/Magisk file-drop dispatcher for rooted devices. It watches a local Android directory, detects explicit target markers in file names, and uploads complete artifacts to configured SSH drop targets.
+SSH Drop Dispatcher is an Android/Magisk file-drop dispatcher for rooted devices. It watches a local Android directory, routes explicitly named artifacts to configured SSH targets, verifies delivery, and exposes the same runtime through a hardened CLI and standalone browser WebUI.
 
-The public package contains no private targets, no private IP addresses, no private hostnames, no private paths, no SSH keys, and no ntfy tokens.
+The public package contains **no private targets, private IP addresses, private hostnames, private paths, SSH keys, or ntfy tokens**.
 
-## Current release
+## Current stable release
 
 | Field | Value |
 |---|---|
-| Public release | `4.12.6` |
+| Public release | `4.13.0` |
+| versionCode | `4130007` |
 | Module ID | `ssh_drop_dispatcher` |
 | Runtime SoT | `/data/adb/ssh-drop-dispatcher` |
 | Magisk module path | `/data/adb/modules/ssh_drop_dispatcher` |
 | Default scan directory | `/storage/emulated/0/Download` |
+| Shared WebUI Core | `0.3.0` @ `81678604122636ad87a0f6d48eac1262a67154a4` |
 | Sortify marker policy | `v4115` |
 | Update metadata | `update.json` |
 
-## What changed in v4.12.6
+`v4.13.0` is the stable promotion of the Pixel-installed and post-boot verified `4.13.0-verify-owner-rc6` runtime. The stable build is deterministic and CI requires it to differ from the accepted RC6 package **only in `module.prop`**.
 
-This section follows the verified-release README style from the Pixel Thermal Polling Fix repository: plain problem statement, final fix, runtime evidence, operator steps, and explicit safety boundaries.
+## Highlights since v4.12.6
 
-### Problem
+### Dispatcher-owned verification and CLI v3
 
-On some Android/FUSE download paths, the event watcher can miss a newly completed `target-*__*` or `targets-*__*` file. Before this release, such files could wait for the long fallback rescan instead of being processed promptly.
+The dispatcher now has a versioned identity/workflow layer around the existing delivery engine:
 
-A verified rc1 smoke showed the first mitigation was not enough: the fast watchdog did trigger, but it still launched the full Download scan and old completed/collision artifacts could delay the new productive target artifact.
+- delivery tracing and opaque delivery IDs;
+- queue, failure and quarantine inspection;
+- read-only per-file preflight;
+- `dispatch-file --wait` orchestration using the existing dispatcher scan path;
+- delivery receipts and incident context;
+- secret-safe ChatGPT context and doctor output;
+- hardened Termux bridge;
+- explicit target readiness and SHA-256 parity evidence.
 
-### Final fix
+See [CLI v3](docs/CLI_V3.md) and [configuration](docs/CONFIGURATION.md).
 
-`v4.12.6` promotes the rc2 target-only watchdog after post-reboot runtime verification and latency smoke.
+### Standalone WebUI Core 0.3.0
 
-The fast watchdog now processes only explicit dispatcher artifacts:
+The Magisk Action button opens a local standalone browser UI backed by the shared Android Root Module WebUI Core `0.3.0`:
+
+- loopback-only native server on a dynamic port;
+- one-time bootstrap token exchanged for an HttpOnly session cookie;
+- typed and allowlisted operations only;
+- no JavaScript shell execution;
+- typed repeated-record/profile editor;
+- preview-bound whole-collection apply;
+- bounded schema-declared import/export;
+- secret/reference/credential export policy metadata;
+- bounded inventories, logs and background jobs.
+
+The consumer lock is pinned to the current shared template commit; floating `main` is never consumed silently.
+
+### Faster, clearer operation
+
+- Fast local WebUI status with runtime latency checks.
+- Typed profile aliases are canonicalized before apply/export.
+- Add-record, focus/scroll, confirmation and result-summary UX is improved.
+- Support bundles derive their version from module metadata.
+- ntfy is shown only as secret-safe configured/not-configured state.
+- Sortify companion status is read-only; Sortify remains authoritative for its writable settings.
+
+### Aggregate target readiness
+
+`Test all enabled targets` checks enabled targets sequentially and non-fail-fast without delivering artifacts.
+
+Required targets remain hard failures. Explicitly intermittent targets such as ZeroPi2 may be reported as:
 
 ```text
-target-*__*
-targets-*__*
+SKIP reason=intermittent_unavailable
 ```
 
-The trigger no longer depends on a full Download scan. Logs identify the path clearly:
+only when the failure is the allowed SSH availability boundary. Reachable targets with readiness/content/storage failures still fail.
+
+## Install / update
+
+1. Download `ssh-drop-dispatcher-magisk-v4.13.0.zip` from the `v4.13.0` GitHub release.
+2. Install the ZIP through Magisk.
+3. Reboot Android normally.
+4. Open the module Action button for the WebUI, or use the CLI.
+
+Persistent configuration lives under:
 
 ```text
-INFO fast_target_watchdog_trigger ... mode=target_only
-START scan_dir=... reason=fast_target_watchdog mode=target_only
-PROCESS pass=1 file=target-...__...
-INFO delivery_latency ... latency_seconds=<n>
+/data/adb/ssh-drop-dispatcher
 ```
 
-### Verified final behavior
+and is preserved across normal module updates.
 
-Runtime evidence from the final rc2 smoke:
-
-```text
-version=4.12.6-low-latency-rc2
-versionCode=4126002
-fast_target_watchdog_enabled=yes
-fast_target_interval_seconds=30
-latency_warn_seconds=60
-automatic_delivery=PASS
-measured_latency_seconds=37
-last_delivery_latency_seconds=28
-target_only_trigger_gate=PASS
-target_only_scan_log_gate=PASS
-RESULT: SDD_V4126_RC2_LATENCY_SMOKE_DONE
-```
-
-The final release keeps the same delivery logic and promotes that verified behavior as:
-
-```text
-version=4.12.6
-versionCode=4126003
-```
-
-## Safety invariants
-
-`v4.12.6` does not change these boundaries:
-
-- No host payload execution.
-- No DNS, HA, VIP, default-route, static-route, MagicDNS, or subnet-route changes.
-- No target drop-path changes.
-- No bundled private runtime data.
-- Sortify marker policy remains `v4115`.
-- Public/private boundary remains strict.
-
-## Filename contract
+## Filename routing
 
 Only explicit target prefixes are routed by default.
 
@@ -102,256 +109,81 @@ Multiple targets:
 targets-alpha-beta__file.txt
 ```
 
-Examples:
+Checksum/signature sidecars such as `*.sha256`, `*.sha256sum`, `*.md5`, `*.sig`, and `*.asc` are ignored by the dispatcher.
+
+## CLI quick start
+
+After installation, the Termux bridge exposes `sdd` when the bridge is installed/current.
 
 ```text
-target-pi3__inventory.sh
-target-pi4__report.txt
-targets-pi3-pi4__bundle.tar.gz
+sdd version
+sdd status
+sdd queue
+sdd failures
+sdd quarantine
+sdd preflight <file>
+sdd trace <file|delivery-id>
+sdd incident --chatgpt <file|delivery-id>
 ```
 
-Checksum sidecars such as `*.sha256`, `*.sha256sum`, `*.md5`, `*.sig`, and `*.asc` are ignored by the dispatcher.
-
-## Quick install
-
-1. Download the release ZIP:
+A controlled delivery workflow uses:
 
 ```text
-ssh-drop-dispatcher-magisk-v4.12.6.zip
+sdd dispatch-file <file> --wait
 ```
 
-2. Install it through Magisk.
-3. Reboot Android.
-4. Configure your own private targets under:
+It does not create a second uploader: preflight feeds the existing dispatcher scan path and then waits on the resulting delivery state.
+
+## WebUI
+
+Open the Magisk module Action button. The WebUI provides:
+
+- Overview and health;
+- secret-safe ntfy state;
+- target matrix and explicit readiness tests;
+- queue/failure/quarantine/receipt inventories;
+- typed profile editing;
+- preview-first import and collection apply;
+- safe export;
+- bounded actions and background jobs;
+- read-only Sortify companion inventory.
+
+The WebUI is not a boot dependency. A WebUI failure cannot prevent the normal dispatcher service from starting.
+
+## Safety invariants
+
+- No automatic host payload execution.
+- No DNS, HA, VIP, default/static route, MagicDNS, or subnet-route changes.
+- No target drop-path changes as part of the v4.13.0 stable promotion.
+- No bundled private runtime data.
+- Sortify release-marker policy remains `v4115`.
+- Stable publication changes only release metadata relative to the accepted RC6 payload; the delivery core is unchanged.
+
+## Verification provenance
+
+The accepted Pixel RC6 runtime passed post-boot installed-runtime verification with:
 
 ```text
-/data/adb/ssh-drop-dispatcher/config/targets.d
+RESULT: SDD_V4130_VERIFY_OWNER_RC6_RUNTIME_VERIFY_PASS workflow_exit_code=0
+RESULT: CG_INSTALLED_RUNTIME_VERIFY_DONE outcome=success workflow_exit_code=0
 ```
 
-5. Verify runtime status:
+Accepted RC6 package SHA-256:
 
 ```text
-su -c /data/adb/modules/ssh_drop_dispatcher/service.sh --runtime-status
+31ed930fc222d7879e12c8f3f83516b6e4793ae995991121dfb39b8610dccdae
 ```
 
-Expected core state:
-
-```text
-version=4.12.6
-versionCode=4126003
-status=OK
-main_pid_ok=yes
-watcher_pid_ok=yes
-watchdog_pid_ok=yes
-event_pending=no
-fast_target_watchdog_enabled=1
-fast_target_interval_seconds=30
-latency_warn_seconds=60
-```
-
-## Day-to-day operation
-
-Primary setup command after flashing and rebooting:
-
-```text
-dispatch-config
-```
-
-Fallback if the Termux command is not available yet:
-
-```text
-su -c /data/adb/ssh-drop-dispatcher/bin/dispatch-config
-```
-
-Manual dispatch trigger:
-
-```text
-su -c /data/adb/modules/ssh_drop_dispatcher/service.sh --dispatch-now
-```
-
-Runtime status:
-
-```text
-su -c /data/adb/modules/ssh_drop_dispatcher/service.sh --runtime-status
-```
-
-WebUI status:
-
-```text
-su -c /data/adb/modules/ssh_drop_dispatcher/service.sh --webui-status
-```
-
-## Low-latency configuration
-
-Defaults:
-
-```text
-DROP_DISPATCH_FAST_TARGET_WATCHDOG=1
-DROP_DISPATCH_FAST_TARGET_INTERVAL_SECONDS=30
-DROP_DISPATCH_LATENCY_WARN_SECONDS=60
-```
-
-WebUI/runtime status exposes:
-
-```text
-fast_target_watchdog_enabled=yes
-fast_target_interval_seconds=30
-latency_warn_seconds=60
-last_delivery_latency_seconds=<seconds>
-```
-
-A latency warning is diagnostic. Delivery can still succeed:
-
-```text
-WARN delivery_latency_sla_breach ... latency_seconds=<n> warn_seconds=60
-```
-
-## Duplicate and already-present behavior
-
-`v4.12.5` duplicate-alias protection remains active in `v4.12.6`.
-
-Expected behavior:
-
-- Original `target-*__*` and `targets-*__*` artifacts deliver normally and emit `PASS` ntfy events with `reason: delivered`.
-- Android/browser suffix aliases with the same canonical name and digest are suppressed with `INFO duplicate_alias`.
-- Alias-shaped files with the same canonical name but different content emit `WARN content_changed_same_canonical_name` and are not silently uploaded.
-- Sortify markers retain canonical metadata such as `canonical_name` and `duplicate_alias_guard=1`.
-
-WebUI status includes:
-
-```text
-duplicate_alias_guard_enabled=yes
-duplicate_alias_notify_records=<count>
-canonical_complete_records=<count>
-```
-
-## ntfy notifications
-
-Optional ntfy notifications are disabled by default and configured only through private runtime config:
-
-```text
-NTFY_ENABLED=1
-NTFY_TOPIC=<private topic>
-```
-
-or:
-
-```text
-NTFY_ENABLED=1
-NTFY_URL=<private endpoint>
-```
-
-Optional token support uses a local private file:
-
-```text
-NTFY_TOKEN_FILE=/private/local/path
-```
-
-Token contents are never displayed by WebUI status. Delivery notifications include `host_run=no`.
-
-Expected compact PASS body:
-
-```text
-<file>
-reason: delivered
-policy: v4115 · host_run: no
-```
-
-## Sortify marker contract
-
-When all selected targets are complete, SDD writes a dispatcher-authoritative marker under:
-
-```text
-/data/adb/ssh-drop-dispatcher/integration/sortify-release
-```
-
-Required contract fields include:
-
-```text
-released=yes
-authority=dispatcher
-policy=v4115
-reason='all_targets_done'
-pending_targets=''
-filename
-canonical_name
-sha256
-size
-rec
-targets
-done_targets
-```
-
-Sortify Dispatch can use this marker to release protected artifacts without becoming the dispatcher SoT.
-
-## Public/private boundary
-
-This repository is the public release channel for the generic SSH Drop Dispatcher package.
-
-Private production runtimes, private target definitions, host aliases, device inventory, SSH keys, ntfy topics, ntfy endpoints, and local configuration are maintained outside this public repository.
-
-Do not infer private runtime state from this public repository.
-
-## Troubleshooting
-
-### File did not deliver immediately
-
-Check runtime status first:
-
-```text
-su -c /data/adb/modules/ssh_drop_dispatcher/service.sh --runtime-status
-```
-
-Then check whether the fast target watchdog triggered:
-
-```text
-su -c 'grep -E "fast_target_watchdog_trigger|mode=target_only|delivery_latency|PROCESS" /data/adb/ssh-drop-dispatcher/log/dispatch.log | tail -80'
-```
-
-Healthy low-latency fallback should show:
-
-```text
-fast_target_watchdog_trigger ... mode=target_only
-PROCESS pass=1 file=target-...__...
-```
-
-### File already delivered before
-
-Look for:
-
-```text
-INFO already_present_suppressed
-INFO duplicate_alias
-WARN content_changed_same_canonical_name
-```
-
-These are usually dedupe/protection outcomes, not upload failures.
-
-### Need operator-only fallback
-
-Break-glass SCP is explicit and never automatic:
-
-```text
-service.sh --breakglass-scp <file> <target>
-service.sh --breakglass-status <file>
-service.sh --breakglass-log-tail [lines]
-```
-
-Break-glass still requires a valid target prefix, space policy PASS, remote digest verification, and evidence in:
-
-```text
-/data/adb/ssh-drop-dispatcher/breakglass.log
-```
+The stable builder first reproduces that exact RC6 digest, then replaces only `module.prop` with `version=4.13.0` / `versionCode=4130007`, rebuilds deterministically twice, and rejects any other payload difference.
 
 ## Documentation
 
-- Installation: `docs/INSTALLATION.md`
-- How it works: `docs/HOW_IT_WORKS.md`
-- Configuration: `docs/CONFIGURATION.md`
-- Features: `docs/FEATURES.md`
-- ntfy runbook: `docs/NTFY_RUNBOOK.md`
-- Changelog: `CHANGELOG.md`
+- [v4.13.0 release notes](RELEASE_NOTES_V4.13.0.md)
+- [CLI v3](docs/CLI_V3.md)
+- [Configuration](docs/CONFIGURATION.md)
+- [vNext implementation status](docs/VNEXT_IMPLEMENTATION_STATUS.md)
+- [Changelog](CHANGELOG.md)
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](./LICENSE).
+See [LICENSE](LICENSE).
