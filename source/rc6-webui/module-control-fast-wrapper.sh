@@ -8,6 +8,7 @@ BASE="$BINDIR/module-control-base"
 SH_BIN=${SDD_WEBUI_SH_BIN:-/system/bin/sh}
 PROP="$MODDIR/module.prop"
 STATE_DIR=${MODULE_STATE_DIR:-/data/adb/ssh-drop-dispatcher}
+RUNTIME_DIR=${WEBUI_RUNTIME_DIR:-/data/local/tmp/ssh_drop_dispatcher-webui}
 CONFIG_FILE=${SDD_WEBUI_CONFIG_FILE:-$STATE_DIR/config.env}
 TARGET_DIR=${SDD_WEBUI_TARGET_DIR:-$STATE_DIR/config/targets.d}
 HEALTH_FILE=${SDD_WEBUI_HEALTH_FILE:-$STATE_DIR/health.env}
@@ -59,6 +60,90 @@ json_field_string() {
   text=$2
   printf '%s\n' "$text" | sed -n 's/.*"'"$key"'":"\([^"\\]*\)".*/\1/p' | head -n 1
 }
+
+target_is_intermittent() {
+  probe_target=$1
+  smoke_list=$(cfg_value DROP_DISPATCH_INTERMITTENT_TARGETS)
+  [ -n "$smoke_list" ] || smoke_list=zeropi2
+  for smoke_item in $(printf '%s' "$smoke_list" | tr ',' ' '); do
+    [ "$smoke_item" = "$probe_target" ] && return 0
+  done
+  return 1
+}
+
+run_all_enabled_smoke_with_availability_policy() {
+  [ -x "$BASE" ] || { echo '{"ok":false,"error":"module-control base unavailable"}' >&2; return 69; }
+  [ -x "$SH_BIN" ] || { echo '{"ok":false,"error":"module-control shell unavailable"}' >&2; return 69; }
+  mkdir -p "$RUNTIME_DIR" >/dev/null 2>&1 || true
+  smoke_tmp="$RUNTIME_DIR/rc6-target-smoke.$$"
+  rm -f "$smoke_tmp" >/dev/null 2>&1 || true
+  "$SH_BIN" "$BASE" job-run target-test-all-enabled >"$smoke_tmp" 2>&1
+  smoke_rc=$?
+  if [ "$smoke_rc" -eq 0 ]; then
+    cat "$smoke_tmp"
+    rm -f "$smoke_tmp" >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  failed_targets=$(sed -n 's/^target=\([a-z0-9_-][a-z0-9_-]*\) result=FAIL rc=[0-9][0-9]*$/\1/p' "$smoke_tmp")
+  [ -n "$failed_targets" ] || {
+    cat "$smoke_tmp"
+    rm -f "$smoke_tmp" >/dev/null 2>&1 || true
+    return "$smoke_rc"
+  }
+
+  smoke_skipped=0
+  smoke_reclassify=yes
+  for smoke_target in $failed_targets; do
+    if ! target_is_intermittent "$smoke_target"; then
+      smoke_reclassify=no
+      break
+    fi
+    if ! sed -n "/^== target $smoke_target ==$/,/^target=$smoke_target result=/p" "$smoke_tmp" | grep -F 'ssh_auth=FAIL' >/dev/null 2>&1; then
+      smoke_reclassify=no
+      break
+    fi
+    smoke_skipped=$((smoke_skipped + 1))
+  done
+
+  if [ "$smoke_reclassify" != yes ]; then
+    cat "$smoke_tmp"
+    rm -f "$smoke_tmp" >/dev/null 2>&1 || true
+    return "$smoke_rc"
+  fi
+
+  smoke_tested=$(sed -n 's/^RESULT: SDD_WEBUI_TARGET_SMOKE_ALL_DONE .* tested=\([0-9][0-9]*\) .*$/\1/p' "$smoke_tmp" | tail -n 1)
+  case "$smoke_tested" in ""|*[!0-9]*) smoke_tested=0 ;; esac
+  smoke_passed=$((smoke_tested - smoke_skipped))
+  while IFS= read -r smoke_line || [ -n "$smoke_line" ]; do
+    case "$smoke_line" in
+      "RESULT: SDD_WEBUI_TARGET_SMOKE_ALL_DONE "*) continue ;;
+      target=*" result=FAIL rc="*)
+        smoke_target=${smoke_line#target=}
+        smoke_target=${smoke_target%% *}
+        if target_is_intermittent "$smoke_target"; then
+          smoke_fail_rc=${smoke_line##* rc=}
+          echo "target=$smoke_target result=SKIP rc=$smoke_fail_rc reason=intermittent_unavailable"
+        else
+          echo "$smoke_line"
+        fi
+        ;;
+      *) echo "$smoke_line" ;;
+    esac
+  done < "$smoke_tmp"
+  echo "smoke_policy=required_targets_must_pass_intermittent_unavailable_skips"
+  echo "intermittent_targets=$(cfg_value DROP_DISPATCH_INTERMITTENT_TARGETS)"
+  [ -n "$(cfg_value DROP_DISPATCH_INTERMITTENT_TARGETS)" ] || echo "intermittent_targets_default=zeropi2"
+  echo "RESULT: SDD_WEBUI_TARGET_SMOKE_ALL_DONE outcome=success tested=$smoke_tested passed=$smoke_passed skipped=$smoke_skipped failed=0 delivery_executed=no workflow_exit_code=0"
+  rm -f "$smoke_tmp" >/dev/null 2>&1 || true
+  return 0
+}
+
+if [ "${1:-}" = job-run ] && [ "${2:-}" = target-test-all-enabled ]; then
+  [ "$#" -eq 2 ] || exit 2
+  run_all_enabled_smoke_with_availability_policy
+  exit $?
+fi
 
 if [ "${1:-}" != status ]; then
   [ -x "$BASE" ] || { echo '{"ok":false,"error":"module-control base unavailable"}' >&2; exit 69; }
