@@ -1,3 +1,27 @@
+## v4.13.0 - 2026-08-15
+
+Stable promotion of the fully verified `4.13.0-verify-owner-rc6` runtime.
+
+### Changes since the previous public stable release, v4.12.6
+
+- Add dispatcher-owned identity and verification primitives, explicit target readiness/preflight, SHA-256 parity evidence, quarantine-aware state, configuration sanitization, and safer dispatcher ownership boundaries around the existing delivery engine.
+- Add CLI v3 workflow/observability: delivery tracing, queue/failure/quarantine inspection, read-only preflight, `dispatch-file --wait`, delivery receipts, incident context, secret-safe ChatGPT context, doctor output, and the hardened Termux bridge.
+- Move the standalone browser UI to shared Android Root Module WebUI Core `0.3.0` at template commit `81678604122636ad87a0f6d48eac1262a67154a4`, with loopback-only serving, one-time bootstrap tokens, HttpOnly sessions, typed allowlisted operations, and no JavaScript shell execution.
+- Add typed repeated-record/profile editing, preview-bound whole-collection apply, bounded schema-declared import/export, secret/reference/credential export policy metadata, alias canonicalization, and safe no-op preview flows.
+- Add fast local WebUI status, bounded inventories/background jobs, stronger confirmation/apply gating, add-record focus/scroll feedback, and clearer result summaries.
+- Add sequential non-fail-fast `Test all enabled targets` readiness smoke with no artifact delivery. Required targets remain hard failures; explicitly intermittent targets may be `SKIP reason=intermittent_unavailable` only at the SSH availability boundary.
+- Add secret-safe ntfy configured/not-configured indicators and read-only Sortify companion inventory while keeping Sortify authoritative for writable settings.
+- Derive support-bundle version from module metadata, bind Android framework command namespaces, and add deterministic stable promotion/equivalence verification.
+
+### Stable promotion / verification
+
+- Stable metadata: `version=4.13.0`, `versionCode=4130007`.
+- Accepted runtime: `4.13.0-verify-owner-rc6`, source `dc78829e5e3e4be8794ff7441730d8b843a25932`.
+- Accepted RC6 package SHA-256: `31ed930fc222d7879e12c8f3f83516b6e4793ae995991121dfb39b8610dccdae`.
+- Pixel installed-runtime acceptance completed with `RESULT: CG_INSTALLED_RUNTIME_VERIFY_DONE outcome=success workflow_exit_code=0`.
+- Stable CI first reproduces the accepted RC6 digest exactly, then requires the stable package to differ only in `module.prop`; the delivery core remains unchanged.
+- No target delivery, host payload execution, DNS/HA/VIP/default/static route/MagicDNS/subnet-route mutation, private-target bundling, or Sortify policy change is part of the stable promotion.
+
 ## v4.12.5 - 2026-06-16
 
 - Promote duplicate-alias guard rc1 to final after Pixel/Magisk runtime smoke passed.
@@ -30,7 +54,7 @@
 
 ## v4.12.2-webui-rc1 - 2026-06-13
 
-- Add secret-safe WebUI ntfy settings actions: set config, preserve token secrecy, backup config before changes, and send test notification.
+- Add secret-safe WebUI ntfy settings actions: set config, preserve token secrecy, backup config before changes, and send a test notification.
 - Keep v4.12.1 final delivery safety, BerylAX parser, break-glass SCP, delivery status/wait, and Sortify marker policy v4115 unchanged.
 
 ## v4.12.1 - 2026-06-12
@@ -141,7 +165,7 @@
 ## 4.11.0-rc5 - Registry routing and Sortify marker contract
 - Routes file names through the imported target registry instead of hard-coded sample targets.
 - Adds a Sortify release marker directory and writes completion markers after all selected targets finish.
-- Keeps prompt-safe private-runtime export behavior from rc4.
+- Keeps prompt-safe private runtime export behavior from rc4.
 - Public defaults remain generic and contain no private targets, paths, IPs or keys.
 
 ## 4.11.0-rc4 - Prompt-safe private runtime export

@@ -13,8 +13,8 @@ for f in "$SDD" "$LIB" "$MACHINE" "$WORKFLOW" "$CUSTOMIZE"; do
   /bin/sh -n "$f"
 done
 
-grep -Fx 'version=4.13.0-verify-owner-rc3' "$PROP" >/dev/null
-grep -Fx 'versionCode=4130003' "$PROP" >/dev/null
+grep -Fx 'version=4.13.0' "$PROP" >/dev/null
+grep -Fx 'versionCode=4130007' "$PROP" >/dev/null
 grep -F 'SDD_CLI_SCHEMA=3' "$SDD" >/dev/null
 grep -F 'SDD_WORKFLOW_SCHEMA=1' "$SDD" >/dev/null
 grep -F 'dispatch-file <file> --wait' "$SDD" >/dev/null
@@ -168,4 +168,4 @@ rc=$?
 set -e
 [ "$rc" -eq 64 ]
 
-printf '%s\n' 'RESULT: SDD_RC3_WORKFLOW_CONTRACT_FIXTURES_PASS version=4.13.0-verify-owner-rc3 cli_schema=3 workflow_schema=1 receipt_schema=1 incident_schema=1'
+printf '%s\n' 'RESULT: SDD_RC3_WORKFLOW_CONTRACT_FIXTURES_PASS version=4.13.0 cli_schema=3 workflow_schema=1 receipt_schema=1 incident_schema=1'
