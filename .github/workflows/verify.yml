@@ -6,6 +6,7 @@ on:
       - main
       - rc4-webui-overhaul
       - rc5-webui-enhancements
+      - rc6-webui-ux
   pull_request:
     branches:
       - main
@@ -37,7 +38,7 @@ jobs:
               *bash*) bash -n "$file" ;;
               *) sh -n "$file" ;;
             esac
-          done < <(find source/magisk source/rc4-webui source/rc5-webui tests -type f \( -name '*.sh' -o -name 'module-control' \) -print0)
+          done < <(find source/magisk source/rc4-webui source/rc5-webui source/rc6-webui tests -type f \( -name '*.sh' -o -name 'module-control' -o -name 'module-control-base' \) -print0)
           test -z "$(gofmt -l source/rc5-webui/*.go)"
 
       - name: Verify dispatcher identity fixtures
@@ -135,6 +136,54 @@ jobs:
         with:
           name: ssh-drop-dispatcher-rc5-webui-candidate
           path: /tmp/sdd-rc5-handoff/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Build RC6 WebUI UX candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/sdd-rc6-handoff
+          module_zip=/tmp/sdd-rc6-handoff/ssh-drop-dispatcher-magisk-v4.13.0-verify-owner-rc6.zip
+          python3 tools/build_rc6_webui.py --output "$module_zip" | tee /tmp/rc6-build.log
+          grep -Fq 'RESULT: SDD_RC6_WEBUI_BUILD_DONE outcome=success delivery_core_changed=no workflow_exit_code=0' /tmp/rc6-build.log
+          unzip -tq "$module_zip" >/dev/null
+          unzip -p "$module_zip" module.prop | grep -Fxq 'version=4.13.0-verify-owner-rc6'
+          unzip -p "$module_zip" module.prop | grep -Fxq 'versionCode=4130006'
+          unzip -p "$module_zip" tools/dispatch-config.sh | grep -Fq 'VERSION=$(sed -n'
+          ! unzip -p "$module_zip" tools/dispatch-config.sh | grep -Fq 'VERSION=4.12.6'
+          unzip -Z1 "$module_zip" | grep -Fxq 'bin/webui-server-arm64'
+          unzip -Z1 "$module_zip" | grep -Fxq 'bin/module-control'
+          unzip -Z1 "$module_zip" | grep -Fxq 'bin/module-control-rc4'
+          unzip -Z1 "$module_zip" | grep -Fxq 'bin/module-control-base'
+          unzip -Z1 "$module_zip" | grep -Fxq 'bin/sdd-webui-v03-helper-arm64'
+          unzip -Z1 "$module_zip" | grep -Fxq 'webroot/app.js'
+          unzip -Z1 "$module_zip" | grep -Fxq 'webroot/app.css'
+          unzip -Z1 "$module_zip" | grep -Fxq 'webroot/v03.js'
+          unzip -Z1 "$module_zip" | grep -Fxq 'webroot/sdd-ui.js'
+          unzip -Z1 "$module_zip" | grep -Fxq 'webroot/sdd-ui.css'
+          module_sha=$(sha256sum "$module_zip" | awk '{print $1}')
+          module_bytes=$(wc -c < "$module_zip" | tr -d ' ')
+          {
+            echo 'schema=sdd-rc6-webui-build-manifest-v1'
+            echo 'version=4.13.0-verify-owner-rc6'
+            echo 'versionCode=4130006'
+            echo 'webui_core_version=0.3.0'
+            echo 'webui_core_commit=81678604122636ad87a0f6d48eac1262a67154a4'
+            echo 'delivery_core_service_blob=c19b1dfb315cf53e4db9d43fe069d3d56d8f6337'
+            echo "module_zip=$(basename "$module_zip")"
+            echo "module_bytes=$module_bytes"
+            echo "module_sha256=$module_sha"
+            echo 'delivery_core_changed=no'
+            echo 'installed_runtime_verified=no'
+          } > /tmp/sdd-rc6-handoff/rc6-build-manifest.txt
+
+      - name: Upload RC6 candidate bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssh-drop-dispatcher-rc6-webui-candidate
+          path: /tmp/sdd-rc6-handoff/
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
