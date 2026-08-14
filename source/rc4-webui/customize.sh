@@ -1,0 +1,57 @@
+#!/system/bin/sh
+SKIPMOUNT=false
+PROPFILE=true
+POSTFSDATA=false
+LATESTARTSERVICE=true
+
+STATE_DIR=/data/adb/ssh-drop-dispatcher
+RUNTIME_BIN=$STATE_DIR/bin
+TERMUX_INSTALLER=$STATE_DIR/tools/sdd-termux-install.sh
+MODULE_VERSION=$(sed -n 's/^version=//p' "$MODPATH/module.prop" 2>/dev/null | head -n 1)
+[ -n "$MODULE_VERSION" ] || MODULE_VERSION=unknown
+
+ui_print "SSH Drop Dispatcher $MODULE_VERSION"
+ui_print "Runtime SoT: $STATE_DIR"
+ui_print "Author: Lycidias93"
+ui_print "Dispatcher-owned remote verification + CLI v3 workflow + secure standalone WebUI"
+ui_print "Public defaults only: no bundled private targets or keys"
+
+mkdir -p "$STATE_DIR/log" "$STATE_DIR/ssh" "$STATE_DIR/config/targets.d" "$STATE_DIR/tools" "$RUNTIME_BIN" "$STATE_DIR/backups"
+
+set_perm_recursive $MODPATH 0 0 0755 0644
+set_perm $MODPATH/service.sh 0 0 0755
+[ -f "$MODPATH/action.sh" ] && set_perm $MODPATH/action.sh 0 0 0755
+[ -f "$MODPATH/manual-scan.sh" ] && set_perm $MODPATH/manual-scan.sh 0 0 0755
+[ -d "$MODPATH/bin" ] && set_perm_recursive $MODPATH/bin 0 0 0755 0755
+[ -d "$MODPATH/tools" ] && set_perm_recursive $MODPATH/tools 0 0 0755 0755
+[ -d "$MODPATH/config" ] && set_perm_recursive $MODPATH/config 0 0 0755 0644
+[ -d "$MODPATH/webroot" ] && set_perm_recursive $MODPATH/webroot 0 0 0755 0644
+
+if [ -d "$MODPATH/tools" ]; then
+  for x in "$MODPATH"/tools/*.sh; do
+    [ -f "$x" ] || continue
+    bn=${x##*/}
+    cp -f "$x" "$STATE_DIR/tools/$bn" 2>/dev/null || true
+    chmod 755 "$STATE_DIR/tools/$bn" 2>/dev/null || true
+  done
+fi
+
+if [ -x "$TERMUX_INSTALLER" ]; then
+  "$TERMUX_INSTALLER" install >/dev/null 2>&1 || true
+else
+  ui_print "- WARN: Termux bridge installer missing; runtime tools remain available through module paths"
+fi
+
+ui_print "- Action button: secure standalone browser WebUI on 127.0.0.1 with one-time bootstrap"
+ui_print "- WebUI target matrix: typed target inventory, no host/drop-path exposure"
+ui_print "- WebUI queue/quarantine/failures/receipts: read-only typed inventories"
+ui_print "- WebUI diagnostics: bounded background jobs"
+ui_print "- Primary Termux command: sdd"
+ui_print "- Workflow trace: sdd trace <file|delivery-id>"
+ui_print "- Read-only preflight: sdd preflight <file>"
+ui_print "- Delivery workflow: sdd dispatch-file <file> --wait"
+ui_print "- Incident context: sdd incident --chatgpt"
+ui_print "- Queue/quarantine: sdd queue / sdd quarantine"
+ui_print "- Legacy interactive config command: dispatch-config"
+ui_print "- ChatGPT context: sdd chatgpt-context"
+ui_print "- Runtime fallback: su -c $RUNTIME_BIN/sdd"
