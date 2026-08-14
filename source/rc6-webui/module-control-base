@@ -1,0 +1,501 @@
+#!/system/bin/sh
+set -u
+umask 077
+
+BINDIR=${0%/*}
+MODDIR=${MODULE_DIR:-${BINDIR%/bin}}
+PROP="$MODDIR/module.prop"
+MODULE_ID=ssh_drop_dispatcher
+MODULE_NAME=$(sed -n 's/^name=//p' "$PROP" 2>/dev/null | head -n 1)
+MODULE_VERSION=$(sed -n 's/^version=//p' "$PROP" 2>/dev/null | head -n 1)
+STATE_DIR=${MODULE_STATE_DIR:-/data/adb/ssh-drop-dispatcher}
+RUNTIME_DIR=${WEBUI_RUNTIME_DIR:-/data/local/tmp/${MODULE_ID}-webui}
+CONFIG_FILE=${SDD_WEBUI_CONFIG_FILE:-$STATE_DIR/config.env}
+TARGET_DIR=${SDD_WEBUI_TARGET_DIR:-$STATE_DIR/config/targets.d}
+QUAR_DB=${SDD_WEBUI_QUAR_DB:-$STATE_DIR/dispatch.quarantined}
+RECEIPT_DB=${SDD_WEBUI_RECEIPT_DB:-$STATE_DIR/delivery.receipts.jsonl}
+SERVICE=${SDD_WEBUI_SERVICE:-$MODDIR/service.sh}
+SDD=${SDD_WEBUI_SDD:-$STATE_DIR/bin/sdd}
+CONFIG_TOOL=${SDD_WEBUI_CONFIG_TOOL:-$STATE_DIR/bin/dispatch-config}
+SORTIFY_MODULE_DIR=${SDD_WEBUI_SORTIFY_MODULE_DIR:-/data/adb/modules/sortify}
+SORTIFY_PROP=${SDD_WEBUI_SORTIFY_PROP:-$SORTIFY_MODULE_DIR/module.prop}
+SORTIFY_CONFIG=${SDD_WEBUI_SORTIFY_CONFIG:-$SORTIFY_MODULE_DIR/sortify.conf}
+[ -x "$SDD" ] || SDD="$MODDIR/tools/sdd.sh"
+
+mkdir -p "$RUNTIME_DIR" 2>/dev/null || true
+chmod 0700 "$RUNTIME_DIR" 2>/dev/null || true
+
+json_escape() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e ':a;N;$!ba;s/\n/\\n/g'
+}
+
+json_string() {
+  printf '"%s"' "$(json_escape "$1")"
+}
+
+cfg_value_from() {
+  file=$1
+  key=$2
+  value=$(sed -n "s/^${key}=//p" "$file" 2>/dev/null | tail -n 1)
+  case "$value" in
+    \"*\") value=${value#\"}; value=${value%\"} ;;
+    \'*\') value=${value#\'}; value=${value%\'} ;;
+  esac
+  printf '%s' "$value"
+}
+
+cfg_value() {
+  cfg_value_from "$CONFIG_FILE" "$1"
+}
+
+json_extract_string() {
+  key=$1
+  file=$2
+  sed -n 's/.*"'"$key"'"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$file" | head -n 1
+}
+
+json_extract_bool() {
+  key=$1
+  file=$2
+  sed -n 's/.*"'"$key"'"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' "$file" | head -n 1
+}
+
+json_field_string() {
+  key=$1
+  text=$2
+  printf '%s\n' "$text" | sed -n 's/.*"'"$key"'":"\([^"\\]*\)".*/\1/p' | head -n 1
+}
+
+json_field_number() {
+  key=$1
+  text=$2
+  value=$(printf '%s\n' "$text" | sed -n 's/.*"'"$key"'":[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n 1)
+  [ -n "$value" ] && printf '%s' "$value" || printf '0'
+}
+
+request_file_allowed() {
+  path=$1
+  case "$path" in "$RUNTIME_DIR"/requests/*.json) ;; *) return 1 ;; esac
+  [ -f "$path" ] || return 1
+  [ ! -L "$path" ] || return 1
+  size=$(wc -c < "$path" 2>/dev/null || echo 999999)
+  case "$size" in ""|*[!0-9]*) return 1 ;; esac
+  [ "$size" -le 32768 ]
+}
+
+run_sdd() {
+  [ -x "$SDD" ] || { echo "SDD runtime unavailable" >&2; return 69; }
+  "$SDD" "$@"
+}
+
+run_service() {
+  [ -x "$SERVICE" ] || { echo "Dispatcher service unavailable" >&2; return 69; }
+  "$SERVICE" "$@"
+}
+
+validate_target_name() {
+  case "$1" in ""|*[!abcdefghijklmnopqrstuvwxyz0123456789_-]*) return 1 ;; *) return 0 ;; esac
+}
+
+validate_priority() {
+  case "$1" in min|low|default|high|max) return 0 ;; *) return 1 ;; esac
+}
+
+validate_tags() {
+  printf '%s' "$1" | grep -Eq '^[A-Za-z0-9,._-]{1,80}$'
+}
+
+validate_topic() {
+  [ -z "$1" ] && return 0
+  printf '%s' "$1" | grep -Eq '^[A-Za-z0-9._/-]{1,160}$'
+}
+
+validate_url() {
+  [ -z "$1" ] && return 0
+  [ "${#1}" -le 512 ] || return 1
+  printf '%s' "$1" | grep -Eq '^https?://[A-Za-z0-9._~:/?#\[\]@!$&()*+,;=%+-]+$'
+}
+
+validate_token_file() {
+  [ -z "$1" ] && return 0
+  [ "${#1}" -le 512 ] || return 1
+  printf '%s' "$1" | grep -Eq '^/[A-Za-z0-9._/+@=-]+$'
+}
+
+config_json() {
+  enabled=$(cfg_value NTFY_ENABLED)
+  [ "$enabled" = 1 ] && enabled=true || enabled=false
+  priority=$(cfg_value NTFY_PRIORITY); validate_priority "$priority" || priority=default
+  tags=$(cfg_value NTFY_TAGS); validate_tags "$tags" || tags=package
+  printf '{"ntfy_enabled":%s,"ntfy_priority":' "$enabled"
+  json_string "$priority"
+  printf ',"ntfy_tags":'; json_string "$tags"
+  printf ',"ntfy_topic":"","ntfy_url":"","ntfy_token_file":""}\n'
+}
+
+print_capabilities() {
+  printf '{"schema":"root-module-webui.capabilities.v1","module":{"id":"ssh_drop_dispatcher","name":'
+  json_string "${MODULE_NAME:-SSH Drop Dispatcher}"
+  printf ',"version":'; json_string "${MODULE_VERSION:-unknown}"
+  printf '},"features":{"config":true,"logs":true,"actions":true,"jobs":true,"inventory":true},'
+  printf '"config_fields":['
+  printf '{"key":"ntfy_enabled","label":"Notifications","description":"Enable ntfy delivery notifications.","type":"boolean","required":true},'
+  printf '{"key":"ntfy_priority","label":"Priority","description":"ntfy message priority.","type":"enum","required":true,"options":[{"value":"min","label":"Minimum"},{"value":"low","label":"Low"},{"value":"default","label":"Default"},{"value":"high","label":"High"},{"value":"max","label":"Maximum"}]},'
+  printf '{"key":"ntfy_tags","label":"Tags","description":"Comma-separated safe ntfy tags.","type":"string","required":true,"max_length":80,"pattern":"^[A-Za-z0-9,._-]+$"},'
+  printf '{"key":"ntfy_topic","label":"Topic","description":"Write-only. Leave blank to preserve the current topic.","type":"string","secret":true,"max_length":160,"pattern":"^[A-Za-z0-9._/-]*$"},'
+  printf '{"key":"ntfy_url","label":"URL","description":"Write-only optional ntfy URL. Leave blank to preserve.","type":"string","secret":true,"max_length":512},'
+  printf '{"key":"ntfy_token_file","label":"Token file","description":"Write-only absolute token-file path. Leave blank to preserve.","type":"string","secret":true,"max_length":512}'
+  printf '],"actions":['
+  printf '{"name":"enable","label":"Enable dispatcher","description":"Enable normal dispatcher processing.","risk":"safe","supports_dry_run":true},'
+  printf '{"name":"disable","label":"Disable dispatcher","description":"Pause new dispatcher processing without deleting queue state.","risk":"caution","supports_dry_run":true,"requires_confirmation":true,"confirmation_text":"DISABLE"},'
+  printf '{"name":"dispatch-scan","label":"Run queue scan","description":"Run one normal queue scan. Blocked while scan.lock is active; this is not target-only dispatch.","risk":"danger","supports_dry_run":true,"requires_confirmation":true,"confirmation_text":"DISPATCH"},'
+  printf '{"name":"ntfy-test","label":"Send ntfy test","description":"Send one notification using the current secret-safe runtime configuration.","risk":"safe"},'
+  printf '{"name":"clear-ntfy","label":"Clear ntfy secrets","description":"Disable ntfy and clear topic, URL and token-file reference.","risk":"danger","supports_dry_run":true,"requires_confirmation":true,"confirmation_text":"CLEAR NTFY"}'
+  printf '],"jobs":['
+  printf '{"name":"diagnostics","label":"Run diagnostics","description":"Doctor plus redacted incident context as a bounded background job.","risk":"safe"},'
+  printf '{"name":"target-test-all-enabled","label":"Test all enabled targets","description":"Run Dispatcher-owned readiness/verification sequentially for every currently enabled target. No artifact delivery is performed.","risk":"caution"},'
+  printf '{"name":"target-test-pi3","label":"Test pi3","description":"Run Dispatcher-owned readiness/verification test for pi3.","risk":"caution"},'
+  printf '{"name":"target-test-pi4","label":"Test pi4","description":"Run Dispatcher-owned readiness/verification test for pi4.","risk":"caution"},'
+  printf '{"name":"target-test-zeropi2","label":"Test ZeroPi2","description":"Run Dispatcher-owned readiness/verification test for ZeroPi2.","risk":"caution"},'
+  printf '{"name":"target-test-berylax","label":"Test BerylAX","description":"Run Dispatcher-owned readiness/verification test for BerylAX.","risk":"caution"},'
+  printf '{"name":"issue-bundle","label":"Create issue bundle","description":"Create the existing secret-safe Dispatcher issue.txt diagnostic bundle.","risk":"caution"}'
+  printf '],"inventories":['
+  printf '{"name":"queue","label":"Queue","description":"Pending local Dispatcher queue with RC3 delivery IDs."},'
+  printf '{"name":"targets","label":"Targets","description":"Target names and shell profiles without host or drop-path fields."},'
+  printf '{"name":"sortify","label":"Sortify companion","description":"Read-only Sortify Dispatch module/config status. Sortify remains authoritative for its settings."},'
+  printf '{"name":"quarantine","label":"Quarantine","description":"Recent quarantined delivery records and reasons."},'
+  printf '{"name":"failures","label":"Failures","description":"Recent redacted Dispatcher failure evidence."},'
+  printf '{"name":"receipts","label":"Delivery receipts","description":"Recent RC3 workflow delivery receipts."}'
+  printf ']}\n'
+}
+
+print_status() {
+  context=$(run_sdd --json chatgpt-context 2>/dev/null) || {
+    printf '{"ok":false,"module":{"id":"ssh_drop_dispatcher","name":"SSH Drop Dispatcher","version":'
+    json_string "${MODULE_VERSION:-unknown}"
+    printf '},"summary":[{"label":"Health","value":"UNAVAILABLE","level":"danger"}],"runtime":{"sdd":"unavailable"},"safety":{"arbitrary_shell_blocked":true,"loopback_only":true}}\n'
+    return 0
+  }
+  health=$(json_field_string health "$context"); [ -n "$health" ] || health=unknown
+  version=$(json_field_string version "$context"); [ -n "$version" ] || version=${MODULE_VERSION:-unknown}
+  targets=$(json_field_number targetCount "$context")
+  inflight=$(json_field_number inflightRecords "$context")
+  failures=$(json_field_number failRecords "$context")
+  quarantine=$(json_field_number quarantineRecords "$context")
+  receipts=$(json_field_number deliveryReceiptRecords "$context")
+  last_id=$(json_field_string lastDeliveryId "$context"); [ -n "$last_id" ] || last_id=none
+  last_state=$(json_field_string lastReceiptState "$context"); [ -n "$last_state" ] || last_state=none
+  event_pending=$(json_field_string eventPending "$context"); [ -n "$event_pending" ] || event_pending=unknown
+  ntfy_enabled=$(cfg_value NTFY_ENABLED); [ "$ntfy_enabled" = 1 ] && ntfy_state=enabled || ntfy_state=disabled
+  ntfy_topic=$(cfg_value NTFY_TOPIC); ntfy_url=$(cfg_value NTFY_URL); ntfy_token_file=$(cfg_value NTFY_TOKEN_FILE)
+  [ -n "$ntfy_topic$ntfy_url$ntfy_token_file" ] && ntfy_configured=yes || ntfy_configured=no
+  [ -n "$ntfy_topic" ] && ntfy_topic_configured=yes || ntfy_topic_configured=no
+  [ -n "$ntfy_url" ] && ntfy_url_configured=yes || ntfy_url_configured=no
+  [ -n "$ntfy_token_file" ] && ntfy_token_file_configured=yes || ntfy_token_file_configured=no
+  [ "$health" = OK ] && health_level=good || health_level=caution
+
+  printf '{"ok":true,"module":{"id":"ssh_drop_dispatcher","name":"SSH Drop Dispatcher","version":'; json_string "$version"; printf '},'
+  printf '"summary":['
+  printf '{"label":"Health","value":'; json_string "$health"; printf ',"level":"%s"},' "$health_level"
+  printf '{"label":"Queue / inflight","value":'; json_string "$inflight"; printf ',"level":"%s"},' "$([ "$inflight" = 0 ] && echo good || echo caution)"
+  printf '{"label":"Failures","value":'; json_string "$failures"; printf ',"level":"%s"},' "$([ "$failures" = 0 ] && echo good || echo danger)"
+  printf '{"label":"Quarantine","value":'; json_string "$quarantine"; printf ',"level":"muted"},'
+  printf '{"label":"Targets","value":'; json_string "$targets"; printf ',"level":"muted"},'
+  printf '{"label":"Last delivery","value":'; json_string "$last_state"; printf ',"level":"muted"},'
+  printf '{"label":"Notifications","value":'; json_string "$ntfy_state"; printf ',"level":"muted"}'
+  printf '],"runtime":{"cli_schema":3,"workflow_schema":1,"event_pending":'; json_string "$event_pending"; printf ',"delivery_receipts":%s,"last_delivery_id":' "$receipts"; json_string "$last_id"
+  printf ',"ntfy_configured":'; json_string "$ntfy_configured"
+  printf ',"ntfy_topic_configured":'; json_string "$ntfy_topic_configured"
+  printf ',"ntfy_url_configured":'; json_string "$ntfy_url_configured"
+  printf ',"ntfy_token_file_configured":'; json_string "$ntfy_token_file_configured"
+  printf '},"safety":{"dispatcher_owned_verification":true,"remote_sha_required":true,"bash_fallback_fail_closed":true,"python_delivery_blocked":true,"automatic_requeue_disabled":true,"payload_execution_absent":true,"arbitrary_shell_blocked":true,"arbitrary_path_input_blocked":true,"loopback_only":true,"secret_status_redacted":true}}\n'
+}
+
+apply_config() {
+  file=$1
+  request_file_allowed "$file" || return 2
+  enabled=$(json_extract_bool ntfy_enabled "$file")
+  priority=$(json_extract_string ntfy_priority "$file")
+  tags=$(json_extract_string ntfy_tags "$file")
+  topic=$(json_extract_string ntfy_topic "$file")
+  url=$(json_extract_string ntfy_url "$file")
+  token_file=$(json_extract_string ntfy_token_file "$file")
+  case "$enabled" in true) enabled_num=1 ;; false) enabled_num=0 ;; *) return 2 ;; esac
+  validate_priority "$priority" || return 2
+  validate_tags "$tags" || return 2
+  validate_topic "$topic" || return 2
+  validate_url "$url" || return 2
+  validate_token_file "$token_file" || return 2
+
+  current_topic=$(cfg_value NTFY_TOPIC)
+  current_url=$(cfg_value NTFY_URL)
+  current_token=$(cfg_value NTFY_TOKEN_FILE)
+  [ -n "$topic" ] || topic=$current_topic
+  [ -n "$url" ] || url=$current_url
+  [ -n "$token_file" ] || token_file=$current_token
+  validate_topic "$topic" || return 2
+  validate_url "$url" || return 2
+  validate_token_file "$token_file" || return 2
+
+  run_service --webui-ntfy-set "$enabled_num" "$topic" "$url" "$priority" "$tags" "$token_file" >/dev/null || return $?
+  printf '{"ok":true,"config":%s}\n' "$(config_json)"
+}
+
+action_file() {
+  name=$1
+  file=$2
+  request_file_allowed "$file" || return 2
+  dry_run=$(json_extract_bool dry_run "$file"); [ -n "$dry_run" ] || dry_run=false
+  confirmation=$(json_extract_string confirmation "$file")
+  case "$dry_run" in true|false) ;; *) return 2 ;; esac
+  case "$name" in
+    enable)
+      if [ "$dry_run" = true ]; then
+        printf '{"ok":true,"action":"enable","dry_run":true,"message":"Dispatcher would be enabled."}\n'
+      else
+        run_service --enable >/dev/null || return $?
+        printf '{"ok":true,"action":"enable","dry_run":false,"message":"Dispatcher enabled."}\n'
+      fi
+      ;;
+    disable)
+      [ "$confirmation" = DISABLE ] || return 2
+      if [ "$dry_run" = true ]; then
+        printf '{"ok":true,"action":"disable","dry_run":true,"message":"Dispatcher would be paused without deleting queue state."}\n'
+      else
+        run_service --disable >/dev/null || return $?
+        printf '{"ok":true,"action":"disable","dry_run":false,"message":"Dispatcher disabled."}\n'
+      fi
+      ;;
+    dispatch-scan)
+      [ "$confirmation" = DISPATCH ] || return 2
+      if [ -d "$STATE_DIR/scan.lock" ] || [ -f "$STATE_DIR/scan.lock.ts" ]; then
+        printf '{"ok":false,"action":"dispatch-scan","message":"Blocked: scan.lock is active. Use queue/incident instead of adding follow-up pressure."}\n' >&2
+        return 75
+      fi
+      if [ "$dry_run" = true ]; then
+        queue=$(run_sdd --json queue 50 2>/dev/null || printf '{}')
+        printf '{"ok":true,"action":"dispatch-scan","dry_run":true,"message":"Queue scan would run; no scan lock is currently present.","queue":%s}\n' "$queue"
+      else
+        run_sdd dispatch >/dev/null || return $?
+        printf '{"ok":true,"action":"dispatch-scan","dry_run":false,"message":"One normal Dispatcher queue scan requested."}\n'
+      fi
+      ;;
+    ntfy-test)
+      [ "$dry_run" = false ] || return 2
+      run_service --webui-ntfy-test >/dev/null || return $?
+      printf '{"ok":true,"action":"ntfy-test","message":"ntfy test requested."}\n'
+      ;;
+    clear-ntfy)
+      [ "$confirmation" = "CLEAR NTFY" ] || return 2
+      if [ "$dry_run" = true ]; then
+        printf '{"ok":true,"action":"clear-ntfy","dry_run":true,"message":"ntfy would be disabled and secret references cleared."}\n'
+      else
+        priority=$(cfg_value NTFY_PRIORITY); validate_priority "$priority" || priority=default
+        tags=$(cfg_value NTFY_TAGS); validate_tags "$tags" || tags=package
+        run_service --webui-ntfy-set 0 "" "" "$priority" "$tags" "" >/dev/null || return $?
+        printf '{"ok":true,"action":"clear-ntfy","dry_run":false,"message":"ntfy disabled and secret references cleared."}\n'
+      fi
+      ;;
+    *) return 2 ;;
+  esac
+}
+
+target_test_all_enabled() {
+  tested=0
+  failed=0
+  for cf in "$TARGET_DIR"/*.conf; do
+    [ -f "$cf" ] || continue
+    target_name=$(sed -n 's/^target_name=//p' "$cf" | tail -n 1 | tr -d "'\"")
+    enabled=$(sed -n 's/^enabled=//p' "$cf" | tail -n 1 | tr -d "'\"")
+    [ -n "$enabled" ] || enabled=1
+    [ "$enabled" = 1 ] || continue
+    if ! validate_target_name "$target_name"; then
+      echo "target=invalid result=FAIL reason=invalid_target_name source=$(basename "$cf")"
+      failed=$((failed + 1))
+      continue
+    fi
+    tested=$((tested + 1))
+    echo "== target $target_name =="
+    run_sdd target test "$target_name"
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+      echo "target=$target_name result=PASS rc=0"
+    else
+      echo "target=$target_name result=FAIL rc=$rc"
+      failed=$((failed + 1))
+    fi
+  done
+  if [ "$tested" -eq 0 ]; then
+    echo "RESULT: SDD_WEBUI_TARGET_SMOKE_ALL_DONE outcome=fail tested=0 failed=$failed reason=no_enabled_targets workflow_exit_code=4"
+    return 4
+  fi
+  if [ "$failed" -eq 0 ]; then
+    echo "RESULT: SDD_WEBUI_TARGET_SMOKE_ALL_DONE outcome=success tested=$tested failed=0 delivery_executed=no workflow_exit_code=0"
+    return 0
+  fi
+  echo "RESULT: SDD_WEBUI_TARGET_SMOKE_ALL_DONE outcome=fail tested=$tested failed=$failed delivery_executed=no workflow_exit_code=1"
+  return 1
+}
+
+run_job() {
+  name=$1
+  case "$name" in
+    diagnostics)
+      echo "== doctor --chatgpt =="
+      run_sdd doctor --chatgpt || return $?
+      echo "== incident --chatgpt =="
+      run_sdd --json incident --chatgpt || return $?
+      echo "RESULT: SDD_WEBUI_DIAGNOSTICS_DONE outcome=success workflow_exit_code=0"
+      ;;
+    target-test-all-enabled) target_test_all_enabled ;;
+    target-test-pi3) run_sdd target test pi3 ;;
+    target-test-pi4) run_sdd target test pi4 ;;
+    target-test-zeropi2) run_sdd target test zeropi2 ;;
+    target-test-berylax) run_sdd target test berylax ;;
+    issue-bundle)
+      [ -x "$CONFIG_TOOL" ] || CONFIG_TOOL="$MODDIR/tools/dispatch-config-v2.sh"
+      [ -x "$CONFIG_TOOL" ] || { echo "issue tool unavailable" >&2; return 69; }
+      "$CONFIG_TOOL" issue
+      ;;
+    *) return 2 ;;
+  esac
+}
+
+inventory_queue() {
+  lines=$(run_sdd --env queue 100 2>/dev/null | grep '^delivery_id=' || true)
+  printf '{"ok":true,"name":"queue","columns":["delivery_id","file","state","targets"],"items":['
+  first=1
+  printf '%s\n' "$lines" | while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    id=$(printf '%s\n' "$line" | sed -n 's/.*delivery_id=\([^ ]*\).*/\1/p')
+    file=$(printf '%s\n' "$line" | sed -n 's/.* file=\([^ ]*\).*/\1/p')
+    state=$(printf '%s\n' "$line" | sed -n 's/.* state=\([^ ]*\).*/\1/p')
+    targets=$(printf '%s\n' "$line" | sed -n 's/.* targets=\(.*\)$/\1/p')
+    [ "$first" = 1 ] || printf ','; first=0
+    printf '{"delivery_id":'; json_string "$id"; printf ',"file":'; json_string "$file"; printf ',"state":'; json_string "$state"; printf ',"targets":'; json_string "$targets"; printf '}'
+  done
+  printf ']}\n'
+}
+
+inventory_targets() {
+  printf '{"ok":true,"name":"targets","columns":["name","enabled","shell","scp"],"items":['
+  first=1
+  for cf in "$TARGET_DIR"/*.conf; do
+    [ -f "$cf" ] || continue
+    target_name=$(sed -n 's/^target_name=//p' "$cf" | tail -n 1 | tr -d "'\"")
+    enabled=$(sed -n 's/^enabled=//p' "$cf" | tail -n 1 | tr -d "'\""); [ -n "$enabled" ] || enabled=1
+    shell=$(sed -n 's/^shell=//p' "$cf" | tail -n 1 | tr -d "'\""); [ -n "$shell" ] || shell=unknown
+    scp=$(sed -n 's/^scp_flags=//p' "$cf" | tail -n 1 | tr -d "'\""); [ "$target_name" = berylax ] && [ -z "$scp" ] && scp=-O
+    [ -n "$target_name" ] || continue
+    [ "$first" = 1 ] || printf ','; first=0
+    printf '{"name":'; json_string "$target_name"; printf ',"enabled":'; json_string "$enabled"; printf ',"shell":'; json_string "$shell"; printf ',"scp":'; json_string "${scp:-default}"; printf '}'
+  done
+  printf ']}\n'
+}
+
+inventory_sortify() {
+  present=no
+  version=unavailable
+  config_present=no
+  dispatcher_integration=unknown
+  sort_mode=unknown
+  hold_protected=unknown
+  normal_sort=unknown
+  duplicate_mode=unknown
+  interval_seconds=unknown
+  if [ -f "$SORTIFY_PROP" ]; then
+    present=yes
+    version=$(sed -n 's/^version=//p' "$SORTIFY_PROP" 2>/dev/null | head -n 1)
+    [ -n "$version" ] || version=unknown
+  fi
+  if [ -f "$SORTIFY_CONFIG" ]; then
+    config_present=yes
+    dispatcher_integration=$(cfg_value_from "$SORTIFY_CONFIG" SORTIFY_DISPATCHER_INTEGRATION); [ -n "$dispatcher_integration" ] || dispatcher_integration=auto
+    sort_mode=$(cfg_value_from "$SORTIFY_CONFIG" SORTIFY_SORT_MODE); [ -n "$sort_mode" ] || sort_mode=interval
+    hold_protected=$(cfg_value_from "$SORTIFY_CONFIG" SORTIFY_HOLD_PROTECTED); [ -n "$hold_protected" ] || hold_protected=1
+    normal_sort=$(cfg_value_from "$SORTIFY_CONFIG" SORTIFY_NORMAL_SORT); [ -n "$normal_sort" ] || normal_sort=1
+    duplicate_mode=$(cfg_value_from "$SORTIFY_CONFIG" SORTIFY_DUPLICATE_MODE); [ -n "$duplicate_mode" ] || duplicate_mode=filename
+    interval_seconds=$(cfg_value_from "$SORTIFY_CONFIG" INTERVAL); [ -n "$interval_seconds" ] || interval_seconds=300
+  fi
+  printf '{"ok":true,"name":"sortify","columns":["present","version","config","dispatcher_integration","sort_mode","hold_protected","normal_sort","duplicate_mode","interval_seconds"],"items":[{'
+  printf '"present":'; json_string "$present"
+  printf ',"version":'; json_string "$version"
+  printf ',"config":'; json_string "$config_present"
+  printf ',"dispatcher_integration":'; json_string "$dispatcher_integration"
+  printf ',"sort_mode":'; json_string "$sort_mode"
+  printf ',"hold_protected":'; json_string "$hold_protected"
+  printf ',"normal_sort":'; json_string "$normal_sort"
+  printf ',"duplicate_mode":'; json_string "$duplicate_mode"
+  printf ',"interval_seconds":'; json_string "$interval_seconds"
+  printf '}]}\n'
+}
+
+inventory_quarantine() {
+  printf '{"ok":true,"name":"quarantine","columns":["file","target","reason"],"items":['
+  first=1
+  tail -n 100 "$QUAR_DB" 2>/dev/null | while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    file=${line%%|*}
+    target=$(printf '%s\n' "$line" | sed -n 's/.*|target=\([^|]*\).*/\1/p')
+    reason=$(printf '%s\n' "$line" | sed -n 's/.*|reason=\([^|]*\).*/\1/p')
+    [ "$first" = 1 ] || printf ','; first=0
+    printf '{"file":'; json_string "$file"; printf ',"target":'; json_string "${target:-unknown}"; printf ',"reason":'; json_string "${reason:-unknown}"; printf '}'
+  done
+  printf ']}\n'
+}
+
+inventory_failures() {
+  lines=$(run_sdd --env failures 100 2>/dev/null | grep -v '^schema=' | grep -v '^host_run=' | grep -v '^RESULT:' || true)
+  printf '{"ok":true,"name":"failures","columns":["evidence"],"items":['
+  first=1
+  printf '%s\n' "$lines" | while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    [ "$first" = 1 ] || printf ','; first=0
+    printf '{"evidence":'; json_string "$line"; printf '}'
+  done
+  printf ']}\n'
+}
+
+inventory_receipts() {
+  printf '{"ok":true,"name":"receipts","columns":["delivery_id","file","state","scan_scope"],"items":['
+  first=1
+  tail -n 100 "$RECEIPT_DB" 2>/dev/null | while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    id=$(json_field_string deliveryId "$line")
+    file=$(json_field_string file "$line")
+    state=$(json_field_string finalState "$line"); [ -n "$state" ] || state=$(json_field_string state "$line")
+    scan=$(json_field_string scanScope "$line")
+    [ "$first" = 1 ] || printf ','; first=0
+    printf '{"delivery_id":'; json_string "${id:-unknown}"; printf ',"file":'; json_string "${file:-unknown}"; printf ',"state":'; json_string "${state:-unknown}"; printf ',"scan_scope":'; json_string "${scan:-unknown}"; printf '}'
+  done
+  printf ']}\n'
+}
+
+print_inventory() {
+  case "$1" in
+    queue) inventory_queue ;;
+    targets) inventory_targets ;;
+    sortify) inventory_sortify ;;
+    quarantine) inventory_quarantine ;;
+    failures) inventory_failures ;;
+    receipts) inventory_receipts ;;
+    *) return 2 ;;
+  esac
+}
+
+case "${1:-}" in
+  capabilities) print_capabilities ;;
+  status) print_status ;;
+  config-get) config_json ;;
+  config-apply) [ "$#" -eq 2 ] || exit 2; apply_config "$2" ;;
+  log)
+    lines=${2:-200}
+    case "$lines" in ""|*[!0-9]*) exit 2 ;; esac
+    [ "$lines" -ge 1 ] && [ "$lines" -le 1000 ] || exit 2
+    run_service --webui-log-tail "$lines"
+    ;;
+  action-file) [ "$#" -eq 3 ] || exit 2; action_file "$2" "$3" ;;
+  job-run) [ "$#" -eq 2 ] || exit 2; run_job "$2" ;;
+  inventory) [ "$#" -eq 2 ] || exit 2; print_inventory "$2" ;;
+  *) echo '{"ok":false,"error":"unsupported operation"}' >&2; exit 2 ;;
+esac
