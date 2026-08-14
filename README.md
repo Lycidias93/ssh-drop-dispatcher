@@ -14,6 +14,7 @@ The public package contains **no private targets, private IP addresses, private 
 |---|---|
 | Public release | `4.13.0` |
 | versionCode | `4130007` |
+| Stable ZIP SHA-256 | `d9a59f65f67981fdc397aeab793607910431fc444a06eceac7dae84719a5580a` |
 | Module ID | `ssh_drop_dispatcher` |
 | Runtime SoT | `/data/adb/ssh-drop-dispatcher` |
 | Magisk module path | `/data/adb/modules/ssh_drop_dispatcher` |
@@ -174,7 +175,13 @@ Accepted RC6 package SHA-256:
 31ed930fc222d7879e12c8f3f83516b6e4793ae995991121dfb39b8610dccdae
 ```
 
-The stable builder first reproduces that exact RC6 digest, then replaces only `module.prop` with `version=4.13.0` / `versionCode=4130007`, rebuilds deterministically twice, and rejects any other payload difference.
+Stable package SHA-256:
+
+```text
+d9a59f65f67981fdc397aeab793607910431fc444a06eceac7dae84719a5580a
+```
+
+The stable builder first reproduces the accepted RC6 digest exactly, then replaces only `module.prop` with `version=4.13.0` / `versionCode=4130007`, rebuilds deterministically twice, and rejects any other payload difference. Stable-promotion CI run `31850598193` passed this equivalence check.
 
 ## Documentation
 
