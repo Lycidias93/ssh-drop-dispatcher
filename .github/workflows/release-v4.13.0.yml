@@ -36,14 +36,8 @@ jobs:
           grep -Fxq 'versionCode=4130007' source/stable-v4.13.0/module.prop
           grep -Fxq 'template_commit=81678604122636ad87a0f6d48eac1262a67154a4' webui-core.lock
           grep -Fxq 'core_version=0.3.0' webui-core.lock
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          data = json.loads(Path('update.json').read_text())
-          assert data['version'] == '4.13.0'
-          assert data['versionCode'] == 4130007
-          assert data['zipUrl'].endswith('/v4.13.0/ssh-drop-dispatcher-magisk-v4.13.0.zip')
-          PY
+          python3 -c "import json,pathlib; d=json.loads(pathlib.Path('update.json').read_text()); assert d['version']=='4.13.0'; assert d['versionCode']==4130007; assert d['zipUrl'].endswith('/v4.13.0/ssh-drop-dispatcher-magisk-v4.13.0.zip')"
+          python3 -c "import json,pathlib; d=json.loads(pathlib.Path('update-rc.json').read_text()); assert d['version']=='4.13.0'; assert d['versionCode']==4130007"
           test -s RELEASE_NOTES_V4.13.0.md
 
       - name: Check whether release already exists
@@ -94,16 +88,7 @@ jobs:
         run: |
           set -euo pipefail
           release_json=$(gh release view v4.13.0 --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease,targetCommitish,assets)
-          RELEASE_JSON="$release_json" python3 - <<'PY'
-          import json, os
-          data = json.loads(os.environ['RELEASE_JSON'])
-          assert data['tagName'] == 'v4.13.0'
-          assert data['isDraft'] is False
-          assert data['isPrerelease'] is False
-          names = {asset['name'] for asset in data['assets']}
-          assert 'ssh-drop-dispatcher-magisk-v4.13.0.zip' in names
-          assert 'SHA256SUMS' in names
-          PY
+          RELEASE_JSON="$release_json" python3 -c "import json,os; d=json.loads(os.environ['RELEASE_JSON']); assert d['tagName']=='v4.13.0'; assert d['isDraft'] is False; assert d['isPrerelease'] is False; names={a['name'] for a in d['assets']}; assert 'ssh-drop-dispatcher-magisk-v4.13.0.zip' in names; assert 'SHA256SUMS' in names"
           echo 'RESULT: SDD_V4130_PUBLIC_RELEASE_DONE outcome=success workflow_exit_code=0'
 
       - name: Release already exists
