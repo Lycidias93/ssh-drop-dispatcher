@@ -1,6 +1,6 @@
 {
-  "version": "4.11.0-rc7",
-  "versionCode": 4110007,
-  "zipUrl": "https://github.com/Lycidias93/ssh-drop-dispatcher/releases/download/v4.11.0-rc7/ssh-drop-dispatcher-magisk-v4.11.0-rc7.zip",
+  "version": "4.13.0",
+  "versionCode": 4130007,
+  "zipUrl": "https://github.com/Lycidias93/ssh-drop-dispatcher/releases/download/v4.13.0/ssh-drop-dispatcher-magisk-v4.13.0.zip",
   "changelog": "https://raw.githubusercontent.com/Lycidias93/ssh-drop-dispatcher/main/CHANGELOG.md"
 }
