@@ -82,18 +82,24 @@ jobs:
             --notes-file RELEASE_NOTES_V4.13.0.md \
             --latest
 
-      - name: Verify published release
-        if: steps.existing.outputs.exists == 'no'
-        shell: bash
-        run: |
-          set -euo pipefail
-          release_json=$(gh release view v4.13.0 --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease,targetCommitish,assets)
-          RELEASE_JSON="$release_json" python3 -c "import json,os; d=json.loads(os.environ['RELEASE_JSON']); assert d['tagName']=='v4.13.0'; assert d['isDraft'] is False; assert d['isPrerelease'] is False; names={a['name'] for a in d['assets']}; assert 'ssh-drop-dispatcher-magisk-v4.13.0.zip' in names; assert 'SHA256SUMS' in names"
-          echo 'RESULT: SDD_V4130_PUBLIC_RELEASE_DONE outcome=success workflow_exit_code=0'
-
-      - name: Release already exists
+      - name: Sync corrected public release notes
         if: steps.existing.outputs.exists == 'yes'
         shell: bash
         run: |
           set -euo pipefail
-          echo 'release_v4130=already_present'
+          current_body="$(gh release view v4.13.0 --repo "$GITHUB_REPOSITORY" --json body --jq .body)"
+          expected_body="$(cat RELEASE_NOTES_V4.13.0.md)"
+          if [ "$current_body" = "$expected_body" ]; then
+            echo 'release_notes_sync=already_current'
+          else
+            gh release edit v4.13.0 --repo "$GITHUB_REPOSITORY" --notes-file RELEASE_NOTES_V4.13.0.md
+            echo 'release_notes_sync=updated'
+          fi
+
+      - name: Verify published release
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_json=$(gh release view v4.13.0 --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease,targetCommitish,assets,body)
+          RELEASE_JSON="$release_json" python3 -c "import json,os,pathlib; d=json.loads(os.environ['RELEASE_JSON']); assert d['tagName']=='v4.13.0'; assert d['isDraft'] is False; assert d['isPrerelease'] is False; names={a['name'] for a in d['assets']}; assert 'ssh-drop-dispatcher-magisk-v4.13.0.zip' in names; assert 'SHA256SUMS' in names; assert d['body'].strip()==pathlib.Path('RELEASE_NOTES_V4.13.0.md').read_text().strip()"
+          echo 'RESULT: SDD_V4130_PUBLIC_RELEASE_DONE outcome=success workflow_exit_code=0'
