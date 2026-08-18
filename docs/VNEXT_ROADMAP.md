@@ -1,280 +1,145 @@
 # SSH Drop Dispatcher vNext Roadmap
 
-Status: approved planning baseline
+Status: active, reconciled after public stable `v4.13.0`
 
-Baseline:
+Reconciliation base:
 
-- repository base: `e552c0274d318dce90b7d6129774d1f6e691322c`
-- active public runtime: `4.12.6` / `4126003`
+- repository: `Lycidias93/ssh-drop-dispatcher`
+- branch: `main`
+- planning-base commit: `60620215d368dc7cbd486a7302b32280c0190ce1`
+- public stable: `4.13.0` / `4130007`
+- CLI: v3
+- persistent runtime SoT: `/data/adb/ssh-drop-dispatcher`
 - Sortify marker policy remains `v4115`
-- no host execution is added to the dispatcher
-- no DNS, HA, VIP, default-route, static-route, MagicDNS or subnet-route change belongs to this roadmap
-
-## Objective
-
-Make delivery identity, alias handling, content integrity, retry state and operator visibility deterministic without weakening the existing strict target-prefix, Sortify-release-marker or no-host-run contracts.
-
-The central invariant is:
-
-> A delivery is identified by semantic artifact name, resolved target set and content SHA-256. Requested filename, browser/download alias and effective remote filename are metadata of that identity, not independent delivery records.
-
-## Milestone 1 — Identity and integrity
-
-This is the first implementation and release-candidate scope.
-
-### 1. Delivery identity contract
-
-Introduce a versioned identity record containing at least:
-
-- `identity_version`
-- `requested_name`
-- `semantic_name`
-- `effective_remote_name`
-- `sha256`
-- normalized resolved target set
-- Sortify policy
-- identity state
-
-The target set must be normalized deterministically before identity comparison.
-
-### 2. Narrow duplicate-alias recognition
-
-Current alias handling must no longer treat every trailing numeric dash suffix as a browser duplicate.
-
-Required behavior:
-
-- recognize known browser/download aliases such as `name (1).ext` and narrowly defined duplicate forms;
-- preserve intentional names such as date, build and version suffixes;
-- never reuse an alias result when SHA-256 or target set differs;
-- log the requested, semantic and effective names explicitly.
-
-### 3. Alias-aware status and wait
-
-`--delivery-status` and `--wait-delivery` must resolve by delivery identity rather than exact requested basename only.
-
-Terminal outcomes:
-
-- `PASS_EXACT`
-- `PASS_ALIAS_REUSED`
-- `FAIL_SHA_CONFLICT`
-- `FAIL_TARGET_CONFLICT`
-- `FAIL_QUARANTINED`
-- `FAIL_TERMINAL_DELIVERY`
-- bounded timeout only while the identity remains genuinely pending
-
-The command output must remain machine-readable and include `host_run=no`.
-
-### 4. Mandatory normal-path remote SHA verification
-
-The regular SCP path must verify remote SHA-256 before recording target completion.
-
-Required order:
-
-1. local preflight and local SHA-256;
-2. upload to temporary remote path;
-3. atomic remote rename;
-4. remote existence and syntax/basic verification;
-5. remote SHA-256 readback;
-6. exact local/remote digest comparison;
-7. only then write done/complete state and Sortify release marker.
-
-A missing or mismatched digest is a delivery failure and must not produce `released=yes`.
-
-### 5. Sortify marker identity v2
-
-Keep `policy=v4115`, but harden marker identity and validation.
-
-Requirements:
-
-- explicit marker schema/version field;
-- canonical/semantic name passed explicitly, never inherited from ambient shell state;
-- marker content validates SHA-256, semantic name and normalized target set before reuse;
-- marker reuse with matching SHA but conflicting name or targets is rejected;
-- partial delivery remains `released=no` with accurate done and pending target sets.
-
-### 6. pi3 space-policy variable fix
-
-Read pi3 and pi4 free-space thresholds independently:
-
-- pi3 uses `REMOTE_MIN_FREE_KB_pi3` and `REMOTE_WARN_FREE_KB_pi3`;
-- pi4 uses `REMOTE_MIN_FREE_KB_pi4` and `REMOTE_WARN_FREE_KB_pi4`.
-
-Add a regression fixture proving distinct values are honored.
-
-### 7. Milestone 1 fixture matrix
-
-Static fixtures must cover at least:
-
-- exact single-target delivery;
-- exact multi-target delivery;
-- browser alias with identical SHA and targets;
-- intentional numeric/date suffix not classified as alias;
-- alias with changed SHA;
-- alias with changed target set;
-- stale marker with matching SHA but wrong semantic name;
-- stale marker with matching SHA but wrong target set;
-- regular-path remote SHA match;
-- regular-path remote SHA mismatch;
-- missing remote SHA implementation;
-- partial multi-target delivery;
-- pi3/pi4 distinct space thresholds;
-- BerylAX `scp -O` regression;
-- strict target-prefix and sidecar blocking regression.
-
-Acceptance marker:
-
-`RESULT: SDD_VNEXT_M1_IDENTITY_INTEGRITY_FIXTURES_PASS`
-
-## Milestone 2 — Retry, health and maintenance
-
-Start only after Milestone 1 fixtures and Pixel candidate smoke are green.
-
-### Retry database
-
-Use `dispatch.faildb` as an actual versioned state store with:
-
-- identity key;
-- target;
-- attempt count;
-- first and last failure timestamps;
-- next retry timestamp;
-- failure reason;
-- terminal/nonterminal state.
-
-Retry must be bounded and use deterministic backoff. Repeated notifications must remain debounced.
-
-### Queue-aware health
-
-Health and WebUI status should expose:
-
-- pending count;
-- retrying count;
-- terminal-failure count;
-- oldest pending age;
-- last delivery result and reason;
-- scan-lock age;
-- follow-up pending state.
-
-Alive processes alone must not force `status=OK` when delivery state is degraded.
-
-### Follow-up coalescing
-
-At most one delayed follow-up scan may be pending. Additional events set a flag instead of starting more background sleepers.
-
-### State and log maintenance
-
-Add read-only dry-run first, then separately gated apply support for:
-
-- stale inflight entries;
-- obsolete debounce records;
-- superseded legacy state records;
-- bounded log rotation;
-- backup and rollback evidence before compaction.
-
-Acceptance marker:
-
-`RESULT: SDD_VNEXT_M2_RETRY_OBSERVABILITY_FIXTURES_PASS`
-
-## Milestone 3 — Workflow and target expansion
-
-### Python policy decision
-
-Resolve the current documentation/runtime mismatch explicitly:
-
-- either implement `.py` support with local AST validation and target-aware remote validation;
-- or remove `.py` from active workflow claims.
-
-No implicit partial support is accepted.
-
-### Canonical operator helper
-
-Provide one caller-facing helper that creates a target artifact, records expected identity, waits through alias resolution, verifies final remote SHA and prints a copyable next Termux block when a follow-up action remains.
-
-This helper does not execute the remote artifact.
-
-### Structured operator view
-
-Expose a compact identity-centric queue view for CLI and WebUI:
-
-- requested and effective names;
-- semantic identity;
-- targets;
-- state;
-- retry timing;
-- remote SHA status;
-- last failure;
-- lock/watcher state.
-
-### OMEN onboarding
-
-Treat OMEN as a separate target project after Linux/BerylAX identity and integrity behavior is stable.
-
-Windows/OpenSSH verification must not inherit Bash, systemd, SFTP or Linux path assumptions.
-
-### Optional two-way receipt channel
-
-Design a distinct receipt path for later host execution results.
-
-Rules:
-
-- dispatcher delivery and host execution remain separate states;
-- no automatic host execution;
-- receipt binds to delivery identity and artifact SHA-256;
-- receipt origin and expected result marker are verified;
-- missing receipt never rewrites a successful delivery as an upload failure.
-
-Acceptance marker:
-
-`RESULT: SDD_VNEXT_M3_WORKFLOW_TARGET_FIXTURES_PASS`
-
-## Implementation order
-
-1. Add identity helpers and pure fixtures.
-2. Correct alias classification.
-3. Introduce identity-aware marker validation.
-4. Enforce remote SHA on the normal upload path.
-5. Upgrade status/wait terminal-state handling.
-6. Fix pi3 space variables.
-7. Run static guards and candidate-package verification.
-8. Build a prerelease candidate without changing stable update metadata.
-9. Run Pixel install, reboot verify and exact/alias/conflict delivery smokes.
-10. Promote only after all Milestone 1 acceptance gates pass.
-
-## File matrix for Milestone 1
-
-Expected code and test scope:
-
-- `source/magisk/service.sh`
-- new identity/fixture helpers under `source/magisk/tools/` or `tests/`
-- `docs/FEATURES.md`
-- `docs/HOW_IT_WORKS.md`
-- `docs/DELIVERY_SAFETY_V4121.md` or a superseding vNext document
-- `README.md`
-- `CHANGELOG.md`
-- release-candidate notes and metadata only after implementation verification
-
-Unexpected private target, key, host inventory, route or runtime files are out of scope.
+- Pixel remains the dispatcher control plane
+- no automatic target payload execution
+- no DNS, HA, VIP, default/static route, MagicDNS or subnet-route work belongs to this roadmap
+
+The previous roadmap was written against `4.12.6` and is historical context only where it conflicts with the reconciled state below.
+
+## Stable capabilities already realized
+
+The following items must not be reimplemented as new vNext work:
+
+- dispatcher-owned remote verification;
+- explicit per-target `shell="bash|sh"` with fail-closed missing-Bash behavior;
+- mandatory remote SHA-256 parity before target completion;
+- BerylAX/OpenWrt legacy-SCP compatibility through target `scp_flags`;
+- strict target-prefix routing and checksum/signature sidecar blocking;
+- duplicate/browser-alias handling and canonical completion evidence;
+- independent target free-space policy values;
+- CLI v3 delivery trace, queue/failure/quarantine inspection, preflight, `dispatch-file --wait`, delivery receipts and incident context;
+- machine-readable ENV/JSON output and secret-safe ChatGPT context;
+- explicit `python_delivery=unsupported` policy;
+- standalone WebUI Core 0.3.0, typed target/profile management, preview-before-apply, bounded safe import/export and target readiness actions;
+- secret-safe ntfy configured-state and read-only Sortify inventory.
+
+The existing outbound delivery engine remains authoritative. vNext must extend it rather than create another outbound uploader.
+
+## Reconciliation of the old milestones
+
+| Previous roadmap item | Reconciled state after v4.13.0 | vNext treatment |
+|---|---|---|
+| Delivery identity helper | Pure identity-v2 helpers and fixtures exist. CLI v3 also has an opaque `SDD-*` delivery ID derived from the existing dispatcher record. These are not one unified persisted identity contract. | Preserve the current CLI delivery ID. Add only the SHA-bound correlation evidence required by Return Channel v1; do not rewrite historical delivery state. |
+| Narrow duplicate-alias recognition | Stable behavior exists. | Keep unchanged unless an independent regression is found. |
+| Alias-aware inspection | CLI v3 trace/inspect and existing delivery status/wait provide current operator behavior. | Not a Return Channel prerequisite. |
+| Mandatory normal-path remote SHA | Stable and dispatcher-owned. | Hard invariant; reuse the same SHA implementation for return verification where applicable. |
+| Sortify marker identity | Canonical completion evidence already includes canonical name, SHA-256, target set and `v4115` policy. | Keep `v4115`; Return Channel must not change release-marker semantics. |
+| Independent pi3/pi4 space policy | Stable target-specific configuration exists. | Complete; no new work. |
+| Retry database/backoff | A fail database exists, but CLI capabilities explicitly keep automatic requeue disabled. | Deferred; not required for Return Channel v1. |
+| Queue-aware health | CLI/WebUI inventories and health evidence are substantially richer than the old baseline, but no new automatic retry engine is implied. | Preserve current behavior; return state gets its own namespace. |
+| Follow-up coalescing | Event-pending/watcher plumbing exists in the stable service. | Preserve. |
+| Python policy | Resolved as unsupported. | Complete unless a future independent proposal changes it. |
+| Canonical operator helper | `sdd dispatch-file <file> --wait` and delivery receipts implement the intended orchestration without a second uploader. | Preserve. |
+| Structured operator view | CLI v3 and WebUI inventories/trace provide it. | Preserve; add return-specific views only after the return contract is stable. |
+| OMEN onboarding | Not part of stable. | Deferred separate target project. |
+| Optional two-way receipt channel | Not implemented. | **Current active vNext milestone: Return Channel v1.** |
+
+## Current active milestone — Return Channel v1
+
+Contract: [`RETURN_CHANNEL_V1.md`](RETURN_CHANNEL_V1.md)
+
+Objective:
+
+> Add a generic, pull-based, SHA-verified result/receipt path from an already configured target back to the Pixel without turning SDD into an execution, RPC or remote-shell orchestration system.
+
+Architecture:
+
+```text
+Pixel / SDD outbound  --SSH/SCP-->  target inbox
+external control plane             target worker
+Pixel / SDD return    <--SSH/SCP--  target outbox
+```
+
+The Pixel remains the initiator of every SDD network operation.
+
+### Hard boundaries
+
+Return Channel v1 must preserve all of these:
+
+- no target payload autoexecution;
+- no arbitrary remote command transport or generic RPC endpoint;
+- no incoming SSH requirement on the Pixel;
+- no write of returned data into the configured dispatcher scan directory;
+- no result acceptance without a known delivery correlation and original artifact SHA-256;
+- no change to successful outbound delivery state because a later result is missing, failed or timed out;
+- no new SSH key or trust direction;
+- no private target, host, path, key, token or Crosswork/Codex protocol in the public repository;
+- no DNS/HA/VIP/route/MagicDNS/subnet-route change.
+
+### Implementation order
+
+1. Freeze the versioned request, remote receipt and local state schemas in `RETURN_CHANNEL_V1.md`.
+2. Add strict parser/validator fixtures before any network code.
+3. Add local return request/state storage and atomic inbound staging fixtures; still no network access.
+4. Add durable delivery-to-SHA binding evidence after successful existing remote-SHA delivery, without changing delivery completion semantics.
+5. Add the bounded, exact-path SSH/SCP pull adapter using existing target identity and SSH configuration; no remote directory crawling.
+6. Wire additive `sdd return ...` commands into CLI v3 with ENV/JSON output and redaction.
+7. Run compatibility fixtures proving existing delivery, receipts, target profiles, WebUI target editing and Sortify behavior are unchanged.
+8. Build a prerelease/candidate only; stable update metadata remains untouched.
+9. Verify candidate package/static guards and preserve a complete Pixel rollback anchor before installation.
+10. Run controlled Pixel candidate verification, then a configured target return smoke. No public stable promotion is implied by this roadmap.
+
+### WebUI order
+
+Do not design a second WebUI transport stack. WebUI integration starts only after the CLI/schema contract has survived candidate verification. It may expose return state and a bounded manual collect action, but never a generic file browser or remote shell.
+
+## Deferred work outside Return Channel v1
+
+These remain separate proposals and must not expand the first return-channel candidate:
+
+- automatic retry/backoff engine;
+- OMEN/Windows onboarding;
+- automatic target execution;
+- worker lifecycle management;
+- Crosswork/Codex coordination or task protocols;
+- arbitrary remote commands;
+- generic remote file browsing;
+- automatic remote outbox cleanup.
 
 ## Release discipline
 
-- Do not patch the active Pixel runtime from an unverified worktree.
-- Do not change stable `update.json` during RC development.
-- Build a complete candidate artifact first.
-- Verify package contents, shell syntax, fixtures and public/private guards.
-- Back up active runtime before installation.
-- Preserve the visible rollback anchor.
-- Require post-reboot runtime status and identity-specific delivery smokes.
+- Do not patch active Pixel runtime from an unverified worktree.
+- Do not change stable `update.json` during candidate development.
+- Fixtures and static guards precede Pixel mutation.
+- Build a complete candidate artifact before installation.
+- Back up active runtime and preserve a visible rollback anchor.
+- Post-reboot runtime verification is mandatory before acceptance.
+- Public release notes/changelog contain only user-relevant changes; internal hashes, CI/run IDs, RC provenance and acceptance evidence remain internal evidence.
 - No release, tag or publish is authorized by this planning document alone.
 
-## Definition of done
+## Definition of done for Return Channel v1 planning
 
-The vNext program is complete only when:
+Planning is complete when:
 
-- Milestone 1 identity and integrity behavior is final and runtime verified;
-- Milestone 2 retry and health state is bounded and runtime verified;
-- Milestone 3 workflow claims match implemented behavior;
-- active documentation contains one current dispatcher baseline;
-- Sortify policy compatibility remains verified;
-- `host_run=no` remains true for dispatcher delivery;
-- no DNS/HA/VIP/route behavior changed;
-- no private data entered public repository history.
+- the current `4.13.0` stable baseline and CLI v3 behavior are the source of truth;
+- stale `4.12.6` roadmap assumptions are explicitly reconciled;
+- request, receipt and state schemas are versioned;
+- remote outbox and local inbound layout are fixed;
+- delivery, return and producer execution/result states are independent;
+- correlation binds a known delivery ID, original artifact SHA-256 and source target;
+- path, symlink, traversal, size, count, timeout, replay and redaction invariants are documented;
+- the fixture matrix is defined before implementation;
+- migration/rollback behavior is defined;
+- no target autoexecution or arbitrary remote command surface is introduced;
+- consumer-specific coordination remains outside the public SDD contract.
