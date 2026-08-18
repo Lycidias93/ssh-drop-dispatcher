@@ -1,6 +1,7 @@
 # SDD Return Channel v1 additive delivery binding.
 # This fragment is injected into the vNext candidate service only.
 # It never changes outbound delivery success/failure semantics.
+# delivery_state=unchanged
 
 RETURN_BINDING_ROOT=$STATE_DIR/delivery-bindings
 
