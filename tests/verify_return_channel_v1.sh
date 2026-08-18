@@ -102,10 +102,10 @@ printf '{"schema":"SDD_RETURN_RECEIPT_V1","returnId":"%s","deliveryId":"%s","art
   "$return_id" "$delivery_id" "$artifact_sha" "$result_sha" "$result_bytes" > "$remote_dir/receipt.json"
 
 collect_json=$($helper collect "$return_id")
-python3 - "$return_id" <<'PY' <<<"$collect_json"
-import json,sys
+COLLECT_JSON="$collect_json" python3 - "$return_id" <<'PY'
+import json,os,sys
 rid=sys.argv[1]
-d=json.load(sys.stdin)
+d=json.loads(os.environ["COLLECT_JSON"])
 assert d["returnId"] == rid
 assert d["state"] == "verified"
 assert d["producerResult"] == "failure"
@@ -124,9 +124,9 @@ grep -Fq "src=alpha:$remote_dir/result.txt" "$transport_log" || fail "artifact e
 
 # Re-collect against unchanged receipt is idempotent.
 idempotent_json=$($helper collect "$return_id")
-python3 - <<'PY' <<<"$idempotent_json"
-import json,sys
-d=json.load(sys.stdin)
+IDEMPOTENT_JSON="$idempotent_json" python3 - <<'PY'
+import json,os
+d=json.loads(os.environ["IDEMPOTENT_JSON"])
 assert d["state"] == "verified"
 assert d["idempotent"] is True
 PY
@@ -141,9 +141,9 @@ if replay_out=$($helper collect "$return_id" 2>/dev/null); then
   fail "replay conflict accepted output=$replay_out"
 fi
 state_json=$($helper status "$return_id")
-python3 - <<'PY' <<<"$state_json"
-import json,sys
-d=json.load(sys.stdin)
+STATE_JSON="$state_json" python3 - <<'PY'
+import json,os
+d=json.loads(os.environ["STATE_JSON"])
 # A replay probe must not destroy an already verified local result.
 assert d["state"] == "verified"
 PY

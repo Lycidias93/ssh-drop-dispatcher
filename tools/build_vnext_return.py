@@ -151,8 +151,8 @@ def patch_machine_capabilities(stage: Path) -> None:
     old_commands = "commands='version capabilities status targets target-test dispatch delivery-status delivery-wait delivery-trace delivery-preflight trace inspect queue failures quarantine preflight dispatch-file incident requeue logs doctor chatgpt-context snapshot explain config install-termux bridge-status'"
     new_commands = "commands='version capabilities status targets target-test dispatch delivery-status delivery-wait delivery-trace delivery-preflight trace inspect queue failures quarantine preflight dispatch-file incident requeue logs doctor chatgpt-context snapshot explain config install-termux bridge-status return'"
     text = replace_once(text, old_commands, new_commands, "machine_return_command")
-    old_json = "printf ',\"verifyOwnership\":{\"dispatcher\":true,\"remoteShaRequired\":true,\"bashFallback\":\"fail_closed\",\"pythonDelivery\":\"unsupported\"},\"commands\":'"
-    new_json = "printf ',\"verifyOwnership\":{\"dispatcher\":true,\"remoteShaRequired\":true,\"bashFallback\":\"fail_closed\",\"pythonDelivery\":\"unsupported\"},\"returnChannel\":{\"bindingSchema\":1,\"requestSchema\":1,\"receiptSchema\":1,\"acceptanceSchema\":1,\"pullBased\":true,\"autoExecution\":false},\"commands\":'"
+    old_json = '"verifyOwnership":{"dispatcher":true,"remoteShaRequired":true,"bashFallback":"fail_closed","pythonDelivery":"unsupported"},"commands":'
+    new_json = '"verifyOwnership":{"dispatcher":true,"remoteShaRequired":true,"bashFallback":"fail_closed","pythonDelivery":"unsupported"},"returnChannel":{"bindingSchema":1,"requestSchema":1,"receiptSchema":1,"acceptanceSchema":1,"pullBased":true,"autoExecution":false},"commands":' 
     text = replace_once(text, old_json, new_json, "machine_return_json")
     old_env = '    echo "bash_missing_fallback=fail_closed"; echo "python_delivery=unsupported"; echo "commands=$commands"'
     new_env = '    echo "bash_missing_fallback=fail_closed"; echo "python_delivery=unsupported"; echo "return_binding_schema=1"; echo "return_request_schema=1"; echo "return_receipt_schema=1"; echo "return_acceptance_schema=1"; echo "return_pull_based=yes"; echo "return_auto_execution=no"; echo "commands=$commands"'
@@ -291,12 +291,15 @@ def verify_stage(stage: Path, work: Path) -> None:
     (fixture_state / "config.env").write_text("DROP_DISPATCH_SCAN_DIR=/tmp/sdd-fixture-scan\n")
     (fixture_state / "config" / "targets.d" / "alpha.conf").write_text('target_name="alpha"\nenabled="1"\nssh_host="alpha"\nremote_drop="/tmp/drop"\nplatform="linux"\nshell="bash"\nscp_flags=""\nrole="fixture"\n')
     (fixture_state / "config" / "returns.d" / "alpha.conf").write_text('return_enabled="1"\nremote_outbox="/tmp/sdd-return-outbox"\n')
-    binding_dir = fixture_state / "delivery-bindings" / "SDD-0123456789abcdef"
+    fixture_record = "target-alpha__fixture.txt|1234:99"
+    fixture_delivery_id = "SDD-" + hashlib.sha256(fixture_record.encode()).hexdigest()[:16]
+    fixture_state.joinpath("dispatch.done").write_text(f"{fixture_record}|target=alpha\n")
+    binding_dir = fixture_state / "delivery-bindings" / fixture_delivery_id
     binding_dir.mkdir(parents=True)
-    binding_dir.joinpath("alpha.json").write_text(json.dumps({"schema":"SDD_DELIVERY_BINDING_V1","deliveryId":"SDD-0123456789abcdef","artifactSha256":"a"*64,"target":"alpha","completedEpoch":1700000000,"remoteShaVerified":True}, separators=(",", ":")) + "\n")
+    binding_dir.joinpath("alpha.json").write_text(json.dumps({"schema":"SDD_DELIVERY_BINDING_V1","deliveryId":fixture_delivery_id,"artifactSha256":"a"*64,"target":"alpha","completedEpoch":1700000000,"remoteShaVerified":True}, separators=(",", ":")) + "\n")
     env = os.environ.copy()
     env.update({"SDD_STATE_DIR": str(fixture_state), "SDD_FORMAT": "json"})
-    created = json.loads(run([str(native), "request", "SDD-0123456789abcdef", "--target", "alpha", "--type", "example.result.v1"], env=env, capture=True).stdout)
+    created = json.loads(run([str(native), "request", fixture_delivery_id, "--target", "alpha", "--type", "example.result.v1"], env=env, capture=True).stdout)
     if created.get("state") != "pending" or not created.get("returnId", "").startswith("SDR-"):
         raise RuntimeError("return_request_fixture_failed")
     inventory = json.loads(run([str(native), "inventory"], env=env, capture=True).stdout)
