@@ -1,0 +1,57 @@
+name: vnext-return-pr-integrate-v4
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: github.head_ref == 'feature/return-channel-v1-phase1-20260818'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - name: Apply verified contract and builder patches
+        run: |
+          python3 tools/vnext_return_pr_patch.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tools/build_vnext_return.py')
+          text=p.read_text()
+          old='''    old_json = "printf ',\\\"verifyOwnership\\\":{\\\"dispatcher\\\":true,\\\"remoteShaRequired\\\":true,\\\"bashFallback\\\":\\\"fail_closed\\\",\\\"pythonDelivery\\\":\\\"unsupported\\\"},\\\"commands\\\":'"\n    new_json = "printf ',\\\"verifyOwnership\\\":{\\\"dispatcher\\\":true,\\\"remoteShaRequired\\\":true,\\\"bashFallback\\\":\\\"fail_closed\\\",\\\"pythonDelivery\\\":\\\"unsupported\\\"},\\\"returnChannel\\\":{\\\"bindingSchema\\\":1,\\\"requestSchema\\\":1,\\\"receiptSchema\\\":1,\\\"acceptanceSchema\\\":1,\\\"pullBased\\\":true,\\\"autoExecution\\\":false},\\\"commands\\\":'"'''
+          new='''    old_json = '\"verifyOwnership\":{\"dispatcher\":true,\"remoteShaRequired\":true,\"bashFallback\":\"fail_closed\",\"pythonDelivery\":\"unsupported\"},\"commands\":'\n    new_json = '\"verifyOwnership\":{\"dispatcher\":true,\"remoteShaRequired\":true,\"bashFallback\":\"fail_closed\",\"pythonDelivery\":\"unsupported\"},\"returnChannel\":{\"bindingSchema\":1,\"requestSchema\":1,\"receiptSchema\":1,\"acceptanceSchema\":1,\"pullBased\":true,\"autoExecution\":false},\"commands\":' '''
+          if text.count(old) != 1: raise SystemExit('machine capability builder anchor mismatch')
+          text=text.replace(old,new,1)
+          old_fixture='''    binding_dir = fixture_state / "delivery-bindings" / "SDD-0123456789abcdef"\n    binding_dir.mkdir(parents=True)\n    binding_dir.joinpath("alpha.json").write_text(json.dumps({"schema":"SDD_DELIVERY_BINDING_V1","deliveryId":"SDD-0123456789abcdef","artifactSha256":"a"*64,"target":"alpha","completedEpoch":1700000000,"remoteShaVerified":True}, separators=(",", ":")) + "\\n")\n    env = os.environ.copy()\n    env.update({"SDD_STATE_DIR": str(fixture_state), "SDD_FORMAT": "json"})\n    created = json.loads(run([str(native), "request", "SDD-0123456789abcdef", "--target", "alpha", "--type", "example.result.v1"], env=env, capture=True).stdout)'''
+          new_fixture='''    fixture_record = "target-alpha__fixture.txt|1234:99"\n    fixture_delivery_id = "SDD-" + hashlib.sha256(fixture_record.encode()).hexdigest()[:16]\n    fixture_state.joinpath("dispatch.done").write_text(f"{fixture_record}|target=alpha\\n")\n    binding_dir = fixture_state / "delivery-bindings" / fixture_delivery_id\n    binding_dir.mkdir(parents=True)\n    binding_dir.joinpath("alpha.json").write_text(json.dumps({"schema":"SDD_DELIVERY_BINDING_V1","deliveryId":fixture_delivery_id,"artifactSha256":"a"*64,"target":"alpha","completedEpoch":1700000000,"remoteShaVerified":True}, separators=(",", ":")) + "\\n")\n    env = os.environ.copy()\n    env.update({"SDD_STATE_DIR": str(fixture_state), "SDD_FORMAT": "json"})\n    created = json.loads(run([str(native), "request", fixture_delivery_id, "--target", "alpha", "--type", "example.result.v1"], env=env, capture=True).stdout)'''
+          if text.count(old_fixture) != 1: raise SystemExit('builder fixture identity anchor mismatch')
+          p.write_text(text.replace(old_fixture,new_fixture,1))
+          PY
+          gofmt -w source/vnext-return/sdd-return-helper.go source/vnext-return/sdd-return-helper_test.go
+      - name: Run Return fixtures
+        run: bash tests/verify_return_channel_v1.sh
+      - name: Build candidate twice and verify deterministic identity
+        run: |
+          python3 tools/build_vnext_return.py --output /tmp/one.zip
+          python3 tools/build_vnext_return.py --output /tmp/two.zip
+          cmp /tmp/one.zip /tmp/two.zip
+          sha256sum /tmp/one.zip /tmp/two.zip
+      - name: Commit verified result and remove one-shot transports
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/vnext-return-pr-integrate.yml .github/workflows/vnext-return-pr-integrate-v2.yml .github/workflows/vnext-return-pr-integrate-v3.yml .github/workflows/vnext-return-pr-integrate-v4.yml tools/vnext_return_pr_patch.py
+          git add -A
+          git commit -m 'feat(return): finalize Return Channel v1 candidate contracts'
+          git push origin HEAD:"$HEAD_REF"
