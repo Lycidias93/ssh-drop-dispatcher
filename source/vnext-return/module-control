@@ -1,0 +1,54 @@
+#!/system/bin/sh
+set -u
+umask 077
+
+BINDIR=${0%/*}
+MODDIR=${MODULE_DIR:-${BINDIR%/bin}}
+STATE_DIR=${MODULE_STATE_DIR:-/data/adb/ssh-drop-dispatcher}
+RUNTIME_DIR=${WEBUI_RUNTIME_DIR:-/data/local/tmp/ssh_drop_dispatcher-webui}
+V03=${SDD_WEBUI_V03_CONTROL:-$BINDIR/module-control-v03}
+RETURN_TOOL=${SDD_RETURN_TOOL:-$STATE_DIR/tools/sdd-return.sh}
+[ -x "$RETURN_TOOL" ] || RETURN_TOOL=$MODDIR/tools/sdd-return.sh
+
+json_escape(){ printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e ':a;N;$!ba;s/\n/\\n/g'; }
+json_string(){ printf '"%s"' "$(json_escape "$1")"; }
+
+request_file_allowed(){
+  path=$1
+  case "$path" in "$RUNTIME_DIR"/requests/*.json) ;; *) return 1 ;; esac
+  [ -f "$path" ] || return 1
+  [ ! -L "$path" ] || return 1
+  size=$(wc -c < "$path" 2>/dev/null || echo 999999)
+  case "$size" in ""|*[!0-9]*) return 1 ;; esac
+  [ "$size" -ge 1 ] && [ "$size" -le 65536 ]
+}
+
+print_v04_capabilities(){
+  printf '%s\n' '{"schema":"root-module-webui.extensions.v2","module":{"id":"ssh_drop_dispatcher","name":"SSH Drop Dispatcher"},"features":{"typed_jobs":true,"inventory_operations":true,"references":true},"references":[{"name":"target","label":"Target","source_collection":"targets","source_identity_key":"name"}],"jobs":[{"name":"return-request","label":"Request return","description":"Register a SHA-bound return request for an existing delivery. No remote command or payload execution is performed.","risk":"safe","parameters":[{"key":"delivery_id","label":"Delivery ID","type":"string","required":true,"max_length":20,"pattern":"^SDD-[0-9a-f]{16}$"},{"key":"target","label":"Source target","type":"reference","required":true,"reference":"target"},{"key":"result_type","label":"Result type","type":"string","required":true,"max_length":128,"pattern":"^[A-Za-z0-9._:-]+$"},{"key":"marker","label":"Expected result marker","description":"Optional exact printable line; value remains result-domain metadata.","type":"string","max_length":256,"pattern":"^[ -~]*$"},{"key":"correlation","label":"Caller correlation","description":"Optional opaque caller identifier; not displayed in normal status.","type":"string","max_length":256,"pattern":"^[ -~]*$"}],"phases":["request_registered"]},{"name":"return-probe","label":"Probe return","description":"Check only the exact receipt commit-marker path for a known return ID.","risk":"safe","parameters":[{"key":"return_id","label":"Return ID","type":"string","required":true,"max_length":36,"pattern":"^SDR-[0-9a-f]{32}$"}],"dedupe_keys":["return_id"],"phases":["probing","available"]},{"name":"return-collect","label":"Collect return","description":"Pull only receipt-referenced files, verify origin/correlation/SHA and atomically adopt them into the private inbound store.","risk":"caution","parameters":[{"key":"return_id","label":"Return ID","type":"string","required":true,"max_length":36,"pattern":"^SDR-[0-9a-f]{32}$"}],"dedupe_keys":["return_id"],"phases":["probing","receipt_verified","pulling","sha_verifying","committing","verified"]},{"name":"return-wait","label":"Wait for return","description":"Bounded wait with backoff; timeout does not imply producer failure.","risk":"caution","parameters":[{"key":"return_id","label":"Return ID","type":"string","required":true,"max_length":36,"pattern":"^SDR-[0-9a-f]{32}$"},{"key":"timeout_seconds","label":"Timeout seconds","type":"integer","min":1,"max":3600}],"dedupe_keys":["return_id"],"phases":["probing","waiting","pulling","sha_verifying","verified"]},{"name":"return-cleanup-preview","label":"Inbound retention preview","description":"Read-only verified inbound count/bytes/oldest timestamp. Automatic deletion is not enabled in v1.","risk":"safe","phases":["inventory"]}],"inventory_operations":[{"name":"return-probe","label":"Probe","description":"Probe this exact return ID.","inventory":"returns","identity_field":"return_id","job":"return-probe","job_parameter":"return_id"},{"name":"return-collect","label":"Collect","description":"Collect and verify this exact return ID.","inventory":"returns","identity_field":"return_id","job":"return-collect","job_parameter":"return_id"},{"name":"return-wait","label":"Wait","description":"Bounded wait for this exact return ID.","inventory":"returns","identity_field":"return_id","job":"return-wait","job_parameter":"return_id"}]}'
+}
+
+case "${1:-}" in
+  capabilities-v04)
+    [ "$#" -eq 1 ] || exit 64
+    print_v04_capabilities
+    ;;
+  job-run-file)
+    [ "$#" -eq 3 ] || exit 64
+    job=$2
+    file=$3
+    request_file_allowed "$file" || { echo "invalid private request file" >&2; exit 2; }
+    case "$job" in return-request|return-probe|return-collect|return-wait|return-cleanup-preview) ;; *) echo "unsupported typed job" >&2; exit 2;; esac
+    [ -x "$RETURN_TOOL" ] || { echo "return helper unavailable" >&2; exit 69; }
+    SDD_FORMAT=json WEBUI_RUNTIME_DIR="$RUNTIME_DIR" "$RETURN_TOOL" job-file "$job" "$file"
+    ;;
+  inventory)
+    if [ "${2:-}" = returns ]; then
+      [ "$#" -eq 2 ] || exit 64
+      [ -x "$RETURN_TOOL" ] || { echo '{"ok":false,"name":"returns","items":[]}' ; exit 0; }
+      SDD_FORMAT=json "$RETURN_TOOL" inventory
+    else
+      exec "$V03" "$@"
+    fi
+    ;;
+  *) exec "$V03" "$@" ;;
+esac
