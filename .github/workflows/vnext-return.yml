@@ -25,20 +25,22 @@ jobs:
           cache: false
       - name: Verify Return Channel fixtures
         run: bash tests/verify_return_channel_v1.sh
-      - name: Build reproducible Return RC3 candidate
+      - name: Verify RC4 scan fairness fixture
+        run: python3 tests/verify_return_rc4_scan_fairness.py
+      - name: Build reproducible Return RC4 candidate
         run: |
           set -euo pipefail
-          python3 -m py_compile tools/build_vnext_return_rc3.py
-          mkdir -p /tmp/sdd-return-rc3
-          zip=/tmp/sdd-return-rc3/ssh-drop-dispatcher-magisk-v4.14.0-return-rc3.zip
-          python3 tools/build_vnext_return_rc3.py --output "$zip" | tee /tmp/sdd-return-build.log
-          grep -Fq 'RESULT: SDD_VNEXT_RETURN_RC3_BUILD_DONE outcome=success workflow_exit_code=0' /tmp/sdd-return-build.log
+          python3 -m py_compile tools/build_vnext_return_rc4.py
+          mkdir -p /tmp/sdd-return-rc4
+          zip=/tmp/sdd-return-rc4/ssh-drop-dispatcher-magisk-v4.14.0-return-rc4.zip
+          python3 tools/build_vnext_return_rc4.py --output "$zip" | tee /tmp/sdd-return-build.log
+          grep -Fq 'RESULT: SDD_VNEXT_RETURN_RC4_BUILD_DONE outcome=success workflow_exit_code=0' /tmp/sdd-return-build.log
           grep -Fq 'webui_core_version=0.6.0' /tmp/sdd-return-build.log
           grep -Fq 'webui_core_commit=cb991dc8d7d982defbe5e34c5c0e0908efa9b236' /tmp/sdd-return-build.log
-          grep -Fq 'delivery_core_changed=yes_additive_return_binding_only' /tmp/sdd-return-build.log
+          grep -Fq 'delivery_core_changed=yes_return_binding_plus_scan_fairness' /tmp/sdd-return-build.log
           unzip -tq "$zip" >/dev/null
-          unzip -p "$zip" module.prop | grep -Fxq 'version=4.14.0-return-rc3'
-          unzip -p "$zip" module.prop | grep -Fxq 'versionCode=4140003'
+          unzip -p "$zip" module.prop | grep -Fxq 'version=4.14.0-return-rc4'
+          unzip -p "$zip" module.prop | grep -Fxq 'versionCode=4140004'
           unzip -Z1 "$zip" | grep -Fxq 'bin/sdd-return-helper-arm64'
           unzip -Z1 "$zip" | grep -Fxq 'tools/sdd-return.sh'
           unzip -Z1 "$zip" | grep -Fxq 'webroot/v04.js'
@@ -53,12 +55,19 @@ jobs:
           unzip -p "$zip" webroot/app.js | grep -Fq 'inventoryRefreshButton'
           unzip -p "$zip" service.sh | grep -Fq 'SDD_DELIVERY_BINDING_V1'
           unzip -p "$zip" service.sh | grep -Fq 'delivery_state=unchanged'
+          unzip -p "$zip" service.sh | grep -Fq 'EVENT_FOLLOWUP_WORKER_LOCKDIR=$STATE_DIR/event-followup.worker'
+          unzip -p "$zip" service.sh | grep -Fq 'scan_file_once(){'
+          unzip -p "$zip" service.sh | grep -Fq 'mode=named_file'
+          ! unzip -p "$zip" service.sh | grep -Fq '( $SLEEP_BIN 5; /data/adb/modules/ssh_drop_dispatcher/service.sh --scan-once event_followup )'
+          unzip -p "$zip" tools/sdd-workflow.sh | grep -Fq '"$SERVICE" --scan-file "$PREFLIGHT_FILE" "cli_dispatch_file_${PREFLIGHT_ID}" "$timeout"'
+          unzip -p "$zip" tools/sdd-workflow.sh | grep -Fq 'named_file true'
+          ! unzip -p "$zip" tools/sdd-workflow.sh | grep -Fq 'existing_queue true'
           unzip -p "$zip" tools/sdd.sh | grep -Fq 'if [ "$cmd" = return ]'
           unzip -p "$zip" bin/module-control | grep -Fq 'root-module-webui.extensions.v2'
           unzip -p "$zip" bin/module-control-base | grep -Fq '"name":"returns"'
           sha=$(sha256sum "$zip" | awk '{print $1}')
           bytes=$(wc -c < "$zip" | tr -d ' ')
-          printf 'schema=sdd-vnext-return-rc3-build-manifest-v1\nversion=4.14.0-return-rc3\nversionCode=4140003\nwebui_core_version=0.6.0\nwebui_core_commit=cb991dc8d7d982defbe5e34c5c0e0908efa9b236\nmodule_bytes=%s\nmodule_sha256=%s\nhost_autoexecution_added=no\narbitrary_remote_command_added=no\n' "$bytes" "$sha" > /tmp/sdd-return-rc3/build-manifest.txt
+          printf 'schema=sdd-vnext-return-rc4-build-manifest-v1\nversion=4.14.0-return-rc4\nversionCode=4140004\nwebui_core_version=0.6.0\nwebui_core_commit=cb991dc8d7d982defbe5e34c5c0e0908efa9b236\ndelivery_core_changed=yes_return_binding_plus_scan_fairness\nmodule_bytes=%s\nmodule_sha256=%s\nhost_autoexecution_added=no\narbitrary_remote_command_added=no\n' "$bytes" "$sha" > /tmp/sdd-return-rc4/build-manifest.txt
       - name: Verify stable lane remains untouched
         run: |
           set -euo pipefail
@@ -72,12 +81,12 @@ jobs:
       - name: Public repository safety guard
         run: |
           set -euo pipefail
-          ! grep -RInE '192\.168\.178\.|fd00::|/home/codex|BEGIN OPENSSH PRIVATE KEY|NTFY_TOKEN=' source/vnext-return tools/build_vnext_return.py tools/build_vnext_return_rc2.py tools/build_vnext_return_rc3.py tests/verify_return_channel_v1.sh webui-core-vnext-return.lock
+          ! grep -RInE '192\.168\.178\.|fd00::|/home/codex|BEGIN OPENSSH PRIVATE KEY|NTFY_TOKEN=' source/vnext-return tools/build_vnext_return.py tools/build_vnext_return_rc2.py tools/build_vnext_return_rc3.py tools/build_vnext_return_rc4.py tests/verify_return_channel_v1.sh tests/verify_return_rc4_scan_fairness.py webui-core-vnext-return.lock
           ! grep -RInE 'Codex|Crosswork|ChatGPT.*task|lane=' source/vnext-return
       - uses: actions/upload-artifact@v4
         with:
-          name: ssh-drop-dispatcher-v4.14.0-return-rc3-candidate
-          path: /tmp/sdd-return-rc3/
+          name: ssh-drop-dispatcher-v4.14.0-return-rc4-candidate
+          path: /tmp/sdd-return-rc4/
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
