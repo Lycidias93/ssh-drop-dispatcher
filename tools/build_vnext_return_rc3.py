@@ -15,6 +15,7 @@ VERSION = "4.14.0-return-rc3"
 VERSION_CODE = "4140003"
 TEMPLATE_COMMIT = "cb991dc8d7d982defbe5e34c5c0e0908efa9b236"
 CORE_VERSION = "0.6.0"
+DESCRIPTION = "Android/Magisk SSH file-drop dispatcher with verified outbound delivery, generic pull-based Return Channel v1 and standalone WebUI Core 0.6"
 
 spec = importlib.util.spec_from_file_location("sdd_vnext_return_rc1_builder", RC1_BUILDER)
 if spec is None or spec.loader is None:
@@ -56,6 +57,7 @@ def stage_module(work: Path, fetched: dict[str, Path]) -> Path:
     text = prop.read_text()
     text = replace_line(text, "version=", f"version={VERSION}")
     text = replace_line(text, "versionCode=", f"versionCode={VERSION_CODE}")
+    text = replace_line(text, "description=", f"description={DESCRIPTION}")
     prop.write_text(text)
 
     webroot = stage / "webroot"
@@ -66,6 +68,9 @@ def stage_module(work: Path, fetched: dict[str, Path]) -> Path:
 
 def verify_stage(stage: Path, work: Path) -> None:
     _rc1_verify_stage(stage, work)
+    prop = (stage / "module.prop").read_text()
+    if f"description={DESCRIPTION}\n" not in prop:
+        raise RuntimeError("core06_module_description_mismatch")
     webroot = stage / "webroot"
     index = (webroot / "index.html").read_text()
     for asset in ("observability.js", "observability.css"):
