@@ -1,6 +1,6 @@
 template_repository=Lycidias93/android-root-module-webui-template
-template_commit=a365fea5049a1daa6e674eab27f81b0ebf4c878a
-core_version=0.5.0
-consumer=ssh-drop-dispatcher-v4.14.0-return-rc2
+template_commit=cb991dc8d7d982defbe5e34c5c0e0908efa9b236
+core_version=0.6.0
+consumer=ssh-drop-dispatcher-v4.14.0-return-rc3
 scope=vnext-return-candidate-only
 stable_webui_core_lock_unchanged=yes
