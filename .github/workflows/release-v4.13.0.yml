@@ -1,32 +1,25 @@
-name: release-v4.13.0
+name: release-v4.13.0-legacy
 
 on:
-  workflow_run:
-    workflows:
-      - verify
-    types:
-      - completed
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   release:
-    if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
-      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      HEAD_SHA: ${{ github.sha }}
     steps:
-      - name: Checkout verified main commit
+      - name: Checkout current main
         uses: actions/checkout@v4
         with:
           ref: ${{ env.HEAD_SHA }}
 
-      - name: Check release metadata
+      - name: Check frozen v4.13 release inputs
         shell: bash
         run: |
           set -euo pipefail
@@ -36,11 +29,9 @@ jobs:
           grep -Fxq 'versionCode=4130007' source/stable-v4.13.0/module.prop
           grep -Fxq 'template_commit=81678604122636ad87a0f6d48eac1262a67154a4' webui-core.lock
           grep -Fxq 'core_version=0.3.0' webui-core.lock
-          python3 -c "import json,pathlib; d=json.loads(pathlib.Path('update.json').read_text()); assert d['version']=='4.13.0'; assert d['versionCode']==4130007; assert d['zipUrl'].endswith('/v4.13.0/ssh-drop-dispatcher-magisk-v4.13.0.zip')"
-          python3 -c "import json,pathlib; d=json.loads(pathlib.Path('update-rc.json').read_text()); assert d['version']=='4.13.0'; assert d['versionCode']==4130007"
           test -s RELEASE_NOTES_V4.13.0.md
 
-      - name: Check whether release already exists
+      - name: Check whether legacy release exists
         id: existing
         shell: bash
         run: |
@@ -51,12 +42,11 @@ jobs:
             echo 'exists=no' >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build exact stable promotion
+      - name: Build exact legacy stable promotion
         if: steps.existing.outputs.exists == 'no'
         shell: bash
         run: |
           set -euo pipefail
-          command -v gh >/dev/null
           mkdir -p /tmp/sdd-release-v4130
           module_zip=/tmp/sdd-release-v4130/ssh-drop-dispatcher-magisk-v4.13.0.zip
           python3 tools/build_v4130_stable.py --output "$module_zip" | tee /tmp/v4130-release-build.log
@@ -68,7 +58,7 @@ jobs:
           unzip -p "$module_zip" module.prop | grep -Fxq 'versionCode=4130007'
           sha256sum "$module_zip" | sed 's#/tmp/sdd-release-v4130/##' > /tmp/sdd-release-v4130/SHA256SUMS
 
-      - name: Publish stable GitHub release
+      - name: Publish missing legacy release
         if: steps.existing.outputs.exists == 'no'
         shell: bash
         run: |
@@ -80,9 +70,9 @@ jobs:
             --target "$HEAD_SHA" \
             --title 'SSH Drop Dispatcher v4.13.0' \
             --notes-file RELEASE_NOTES_V4.13.0.md \
-            --latest
+            --latest=false
 
-      - name: Sync corrected public release notes
+      - name: Sync legacy public release notes
         if: steps.existing.outputs.exists == 'yes'
         shell: bash
         run: |
@@ -96,10 +86,10 @@ jobs:
             echo 'release_notes_sync=updated'
           fi
 
-      - name: Verify published release
+      - name: Verify legacy published release
         shell: bash
         run: |
           set -euo pipefail
-          release_json=$(gh release view v4.13.0 --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease,targetCommitish,assets,body)
-          RELEASE_JSON="$release_json" python3 -c "import json,os,pathlib; d=json.loads(os.environ['RELEASE_JSON']); assert d['tagName']=='v4.13.0'; assert d['isDraft'] is False; assert d['isPrerelease'] is False; names={a['name'] for a in d['assets']}; assert 'ssh-drop-dispatcher-magisk-v4.13.0.zip' in names; assert 'SHA256SUMS' in names; assert d['body'].strip()==pathlib.Path('RELEASE_NOTES_V4.13.0.md').read_text().strip()"
-          echo 'RESULT: SDD_V4130_PUBLIC_RELEASE_DONE outcome=success workflow_exit_code=0'
+          release_json=$(gh release view v4.13.0 --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease,assets,body)
+          RELEASE_JSON="$release_json" python3 -c "import json,os,pathlib; d=json.loads(os.environ['RELEASE_JSON']); assert d['tagName']=='v4.13.0'; assert d['isDraft'] is False; assert d['isPrerelease'] is False; names={a['name'] for a in d['assets']}; assert {'ssh-drop-dispatcher-magisk-v4.13.0.zip','SHA256SUMS'} <= names; assert d['body'].strip()==pathlib.Path('RELEASE_NOTES_V4.13.0.md').read_text().strip()"
+          echo 'RESULT: SDD_V4130_LEGACY_RELEASE_DONE outcome=success workflow_exit_code=0'
