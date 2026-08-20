@@ -104,14 +104,7 @@ jobs:
           git fetch origin main
           git checkout main
           git pull --ff-only origin main
-          cat > update.json <<'EOF'
-          {
-            "version": "4.14.0",
-            "versionCode": 4140005,
-            "zipUrl": "https://github.com/Lycidias93/ssh-drop-dispatcher/releases/download/v4.14.0/ssh-drop-dispatcher-magisk-v4.14.0.zip",
-            "changelog": "https://raw.githubusercontent.com/Lycidias93/ssh-drop-dispatcher/main/CHANGELOG.md"
-          }
-          EOF
+          python3 -c 'import json,pathlib; d={"version":"4.14.0","versionCode":4140005,"zipUrl":"https://github.com/Lycidias93/ssh-drop-dispatcher/releases/download/v4.14.0/ssh-drop-dispatcher-magisk-v4.14.0.zip","changelog":"https://raw.githubusercontent.com/Lycidias93/ssh-drop-dispatcher/main/CHANGELOG.md"}; pathlib.Path("update.json").write_text(json.dumps(d,indent=2)+"\n")'
           cp update.json update-rc.json
           cp /tmp/sdd-release-v4140/SHA256SUMS SHA256SUMS
           if git diff --quiet -- update.json update-rc.json SHA256SUMS; then
