@@ -1,0 +1,85 @@
+name: public-release-v4.14.0-verify
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - update.json
+      - update-rc.json
+      - SHA256SUMS
+      - RELEASE_NOTES_V4.14.0.md
+      - tools/build_v4140_stable.py
+      - source/stable-v4.14.0/module.prop
+      - .github/workflows/public-release-v4.14.0-verify.yml
+      - .github/workflows/release-v4.14.0.yml
+  push:
+    branches:
+      - main
+    paths:
+      - update.json
+      - update-rc.json
+      - SHA256SUMS
+      - RELEASE_NOTES_V4.14.0.md
+      - tools/build_v4140_stable.py
+      - source/stable-v4.14.0/module.prop
+      - .github/workflows/public-release-v4.14.0-verify.yml
+      - .github/workflows/release-v4.14.0.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-release-v4.14.0-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+
+      - name: Rebuild exact stable package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/sdd-v4140-public-verify/build
+          module_zip=/tmp/sdd-v4140-public-verify/build/ssh-drop-dispatcher-magisk-v4.14.0.zip
+          python3 tools/build_v4140_stable.py --output "$module_zip" | tee /tmp/sdd-v4140-public-verify/build.log
+          grep -Fq 'RESULT: SDD_V4140_STABLE_BUILD_DONE outcome=success workflow_exit_code=0' /tmp/sdd-v4140-public-verify/build.log
+          grep -Fq 'accepted_rc4_sha256=a0a82185dff60183dd95bbae01299a9a637836b008ede3a8f3a9da2f51e1b96d' /tmp/sdd-v4140-public-verify/build.log
+          grep -Fq 'stable_equivalence=only_module_prop_diff' /tmp/sdd-v4140-public-verify/build.log
+          expected=$(awk 'NF { print $1; exit }' SHA256SUMS)
+          actual=$(sha256sum "$module_zip" | awk '{print $1}')
+          test "$expected" = "$actual"
+          test "$actual" = '868e9735e89bc55cdc43d207fed7a07d7ca92fb5852a975f8ebd8ef8c4c989fd'
+
+      - name: Verify published release metadata and assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_json=$(gh release view v4.14.0 --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease,assets,body)
+          RELEASE_JSON="$release_json" python3 -c "import json,os,pathlib; d=json.loads(os.environ['RELEASE_JSON']); assert d['tagName']=='v4.14.0'; assert d['isDraft'] is False; assert d['isPrerelease'] is False; names={a['name'] for a in d['assets']}; assert {'ssh-drop-dispatcher-magisk-v4.14.0.zip','SHA256SUMS'} <= names; assert d['body'].strip()==pathlib.Path('RELEASE_NOTES_V4.14.0.md').read_text().strip()"
+          mkdir -p /tmp/sdd-v4140-public-verify/release
+          gh release download v4.14.0 --repo "$GITHUB_REPOSITORY" --dir /tmp/sdd-v4140-public-verify/release --pattern 'ssh-drop-dispatcher-magisk-v4.14.0.zip' --pattern 'SHA256SUMS' --clobber
+          cmp /tmp/sdd-v4140-public-verify/build/ssh-drop-dispatcher-magisk-v4.14.0.zip /tmp/sdd-v4140-public-verify/release/ssh-drop-dispatcher-magisk-v4.14.0.zip
+          cmp SHA256SUMS /tmp/sdd-v4140-public-verify/release/SHA256SUMS
+          cd /tmp/sdd-v4140-public-verify/release
+          sha256sum -c SHA256SUMS
+          echo 'RESULT: SDD_V4140_PUBLIC_RELEASE_VERIFY_DONE outcome=success workflow_exit_code=0'
+
+      - name: Verify stable update metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -c "import json,pathlib; a=json.loads(pathlib.Path('update.json').read_text()); b=json.loads(pathlib.Path('update-rc.json').read_text()); assert a==b; assert a['version']=='4.14.0'; assert a['versionCode']==4140005; assert a['zipUrl'].endswith('/v4.14.0/ssh-drop-dispatcher-magisk-v4.14.0.zip')"
+          grep -Fxq '868e9735e89bc55cdc43d207fed7a07d7ca92fb5852a975f8ebd8ef8c4c989fd  ssh-drop-dispatcher-magisk-v4.14.0.zip' SHA256SUMS
