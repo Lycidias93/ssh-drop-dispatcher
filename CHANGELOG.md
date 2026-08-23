@@ -2,6 +2,10 @@
 
 This changelog tracks public, user-relevant stable changes. Historical RC/build/verification bookkeeping remains available in Git history but is intentionally omitted here.
 
+## v4.14.1 - 2026-08-23
+
+- Fixed intermittent SSH failures that could occur when an SSH key/config bundle refresh overlapped a connection attempt. Bundle imports now avoid rewriting unchanged files and publish changed SSH files atomically.
+
 ## v4.14.0 - 2026-08-20
 
 ### What changed since v4.13.0

@@ -1,0 +1,120 @@
+name: release-v4.14.1
+
+on:
+  workflow_run:
+    workflows:
+      - stable-v4.14.1
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Checkout verified main commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.HEAD_SHA }}
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+
+      - name: Check stable release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fxq 'version=4.14.1' source/stable-v4.14.1/module.prop
+          grep -Fxq 'versionCode=4140100' source/stable-v4.14.1/module.prop
+          test -s RELEASE_NOTES_V4.14.1.md
+          grep -Fq '## v4.14.1 - 2026-08-23' CHANGELOG.md
+          test -s source/stable-v4.14.1/service.sh
+          grep -Fq 'bundle_ssh_atomic_refresh_failed' source/stable-v4.14.1/service.sh
+
+      - name: Build exact stable hotfix
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/sdd-release-v4141
+          module_zip=/tmp/sdd-release-v4141/ssh-drop-dispatcher-magisk-v4.14.1.zip
+          python3 tools/build_v4141_stable.py --output "$module_zip" | tee /tmp/v4141-release-build.log
+          grep -Fq 'RESULT: SDD_V4141_STABLE_BUILD_DONE outcome=success workflow_exit_code=0' /tmp/v4141-release-build.log
+          grep -Fq 'published_v4140_sha256=868e9735e89bc55cdc43d207fed7a07d7ca92fb5852a975f8ebd8ef8c4c989fd' /tmp/v4141-release-build.log
+          grep -Fq 'stable_delta=module.prop,service.sh' /tmp/v4141-release-build.log
+          unzip -tq "$module_zip" >/dev/null
+          unzip -p "$module_zip" module.prop | grep -Fxq 'version=4.14.1'
+          unzip -p "$module_zip" module.prop | grep -Fxq 'versionCode=4140100'
+          unzip -p "$module_zip" service.sh | grep -Fq 'bundle_ssh_atomic_refresh_failed'
+          ! unzip -p "$module_zip" service.sh | grep -Fq '&& $CP_BIN -f "$BUNDLE_DIR/ssh/$x" "$SSH_DIR/$x"'
+          sha256sum "$module_zip" | sed 's#/tmp/sdd-release-v4141/##' > /tmp/sdd-release-v4141/SHA256SUMS
+
+      - name: Publish or repair stable GitHub release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view v4.14.1 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit v4.14.1 \
+              --repo "$GITHUB_REPOSITORY" \
+              --title 'SSH Drop Dispatcher v4.14.1' \
+              --notes-file RELEASE_NOTES_V4.14.1.md \
+              --latest
+            gh release upload v4.14.1 \
+              /tmp/sdd-release-v4141/ssh-drop-dispatcher-magisk-v4.14.1.zip \
+              /tmp/sdd-release-v4141/SHA256SUMS \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create v4.14.1 \
+              /tmp/sdd-release-v4141/ssh-drop-dispatcher-magisk-v4.14.1.zip \
+              /tmp/sdd-release-v4141/SHA256SUMS \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$HEAD_SHA" \
+              --title 'SSH Drop Dispatcher v4.14.1' \
+              --notes-file RELEASE_NOTES_V4.14.1.md \
+              --latest
+          fi
+
+      - name: Verify published release bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_json=$(gh release view v4.14.1 --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease,assets,body)
+          RELEASE_JSON="$release_json" python3 -c "import json,os,pathlib; d=json.loads(os.environ['RELEASE_JSON']); assert d['tagName']=='v4.14.1'; assert d['isDraft'] is False; assert d['isPrerelease'] is False; names={a['name'] for a in d['assets']}; assert {'ssh-drop-dispatcher-magisk-v4.14.1.zip','SHA256SUMS'} <= names; assert d['body'].strip()==pathlib.Path('RELEASE_NOTES_V4.14.1.md').read_text().strip()"
+          rm -rf /tmp/sdd-release-verify
+          mkdir -p /tmp/sdd-release-verify
+          gh release download v4.14.1 --repo "$GITHUB_REPOSITORY" --dir /tmp/sdd-release-verify --pattern 'ssh-drop-dispatcher-magisk-v4.14.1.zip' --pattern 'SHA256SUMS' --clobber
+          cmp /tmp/sdd-release-v4141/ssh-drop-dispatcher-magisk-v4.14.1.zip /tmp/sdd-release-verify/ssh-drop-dispatcher-magisk-v4.14.1.zip
+          cmp /tmp/sdd-release-v4141/SHA256SUMS /tmp/sdd-release-verify/SHA256SUMS
+          echo 'RESULT: SDD_V4141_PUBLIC_RELEASE_DONE outcome=success workflow_exit_code=0'
+
+      - name: Advance stable update metadata after publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git checkout main
+          git pull --ff-only origin main
+          python3 -c 'import json,pathlib; d={"version":"4.14.1","versionCode":4140100,"zipUrl":"https://github.com/Lycidias93/ssh-drop-dispatcher/releases/download/v4.14.1/ssh-drop-dispatcher-magisk-v4.14.1.zip","changelog":"https://raw.githubusercontent.com/Lycidias93/ssh-drop-dispatcher/main/CHANGELOG.md"}; pathlib.Path("update.json").write_text(json.dumps(d,indent=2)+"\n")'
+          cp update.json update-rc.json
+          cp /tmp/sdd-release-v4141/SHA256SUMS SHA256SUMS
+          if git diff --quiet -- update.json update-rc.json SHA256SUMS; then
+            echo 'stable_update_metadata=already_current'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- update.json update-rc.json SHA256SUMS
+          git commit -m 'release: publish v4.14.1 update metadata'
+          git push origin HEAD:main
