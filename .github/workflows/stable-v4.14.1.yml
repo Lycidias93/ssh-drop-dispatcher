@@ -1,0 +1,85 @@
+name: stable-v4.14.1
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stable-v4.14.1-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+
+      - name: Verify hotfix source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/prepare_v4141_hotfix.py tools/build_v4141_stable.py
+          test -s source/stable-v4.14.1/service.sh
+          sh -n source/stable-v4.14.1/service.sh
+          ! grep -Fq '&& $CP_BIN -f "$BUNDLE_DIR/ssh/$x" "$SSH_DIR/$x"' source/stable-v4.14.1/service.sh
+          grep -Fq 'src_sig=$($CKSUM_BIN' source/stable-v4.14.1/service.sh
+          grep -Fq 'tmp="$SSH_DIR/.$x.import.$$"' source/stable-v4.14.1/service.sh
+          grep -Fq '$MV_BIN -f "$tmp" "$SSH_DIR/$x"' source/stable-v4.14.1/service.sh
+          grep -Fq 'bundle_ssh_atomic_refresh_failed' source/stable-v4.14.1/service.sh
+
+      - name: Build deterministic stable hotfix
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/sdd-v4141-stable
+          zip=/tmp/sdd-v4141-stable/ssh-drop-dispatcher-magisk-v4.14.1.zip
+          python3 tools/build_v4141_stable.py --output "$zip" | tee /tmp/v4141-stable-build.log
+          grep -Fq 'RESULT: SDD_V4141_STABLE_BUILD_DONE outcome=success workflow_exit_code=0' /tmp/v4141-stable-build.log
+          grep -Fq 'published_v4140_sha256=868e9735e89bc55cdc43d207fed7a07d7ca92fb5852a975f8ebd8ef8c4c989fd' /tmp/v4141-stable-build.log
+          grep -Fq 'stable_delta=module.prop,service.sh' /tmp/v4141-stable-build.log
+          grep -Fq 'ssh_bundle_import_atomic_publish=yes' /tmp/v4141-stable-build.log
+          unzip -tq "$zip" >/dev/null
+          unzip -p "$zip" module.prop | grep -Fxq 'version=4.14.1'
+          unzip -p "$zip" module.prop | grep -Fxq 'versionCode=4140100'
+          unzip -p "$zip" service.sh | grep -Fq 'bundle_ssh_atomic_refresh_failed'
+          ! unzip -p "$zip" service.sh | grep -Fq '&& $CP_BIN -f "$BUNDLE_DIR/ssh/$x" "$SSH_DIR/$x"'
+          unzip -Z1 "$zip" | grep -Fxq 'bin/sdd-return-helper-arm64'
+          unzip -Z1 "$zip" | grep -Fxq 'tools/sdd-return.sh'
+          unzip -p "$zip" webroot/observability.js | grep -Fq 'const CORE_VERSION = "0.6.0"'
+          sha256sum "$zip" | sed 's#/tmp/sdd-v4141-stable/##' > /tmp/sdd-v4141-stable/SHA256SUMS
+
+      - name: Verify public release metadata source
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fxq 'version=4.14.1' source/stable-v4.14.1/module.prop
+          grep -Fxq 'versionCode=4140100' source/stable-v4.14.1/module.prop
+          test -s RELEASE_NOTES_V4.14.1.md
+          grep -Fq '## v4.14.1 - 2026-08-23' CHANGELOG.md
+
+      - name: Public repository safety guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -RInE '192\.168\.178\.|fd00::|/home/codex|BEGIN OPENSSH PRIVATE KEY|NTFY_TOKEN=' source/stable-v4.14.1 RELEASE_NOTES_V4.14.1.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ssh-drop-dispatcher-v4.14.1-stable-candidate
+          path: /tmp/sdd-v4141-stable/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
