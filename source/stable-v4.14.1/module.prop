@@ -1,0 +1,7 @@
+id=ssh_drop_dispatcher
+name=SSH Drop Dispatcher
+version=4.14.1
+versionCode=4140100
+author=Lycidias93
+description=Android/Magisk SSH file-drop dispatcher with verified outbound delivery, Return Channel v1, WebUI Core 0.6 and atomic SSH bundle imports
+updateJson=https://raw.githubusercontent.com/Lycidias93/ssh-drop-dispatcher/main/update.json
