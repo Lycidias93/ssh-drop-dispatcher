@@ -31,17 +31,21 @@ jobs:
       - name: Build deterministic hotfix candidate
         run: |
           set -euo pipefail
-          mkdir -p /tmp/sdd-v4142-hotfix
+          mkdir -p /tmp/sdd-v4142-hotfix /tmp/sdd-v4142-verify
           zip=/tmp/sdd-v4142-hotfix/ssh-drop-dispatcher-magisk-v4.14.2.zip
           python3 tools/build_v4142_hotfix.py --output "$zip" | tee /tmp/v4142-hotfix.log
           grep -Fq 'RESULT: SDD_V4142_HOTFIX_BUILD_DONE outcome=success workflow_exit_code=0' /tmp/v4142-hotfix.log
           unzip -tq "$zip"
-          unzip -p "$zip" module.prop | grep -Fxq 'version=4.14.2'
-          unzip -p "$zip" module.prop | grep -Fxq 'versionCode=4140200'
-          unzip -Z1 "$zip" | grep -Fxq 'tools/sdd-followup-coalesce.sh'
-          unzip -p "$zip" service.sh | grep -Fq 'scan_lock_old_but_owner_alive'
-          unzip -p "$zip" service.sh | grep -Fq 'bundle_ssh_atomic_refresh_failed'
-          ! unzip -p "$zip" service.sh | grep -Fq '( $SLEEP_BIN 5; /data/adb/modules/ssh_drop_dispatcher/service.sh'
+          # Extract completely before grep: with pipefail, grep -q can SIGPIPE unzip.
+          unzip -p "$zip" module.prop > /tmp/sdd-v4142-verify/module.prop
+          unzip -p "$zip" service.sh > /tmp/sdd-v4142-verify/service.sh
+          unzip -Z1 "$zip" > /tmp/sdd-v4142-verify/entries.txt
+          grep -Fxq 'version=4.14.2' /tmp/sdd-v4142-verify/module.prop
+          grep -Fxq 'versionCode=4140200' /tmp/sdd-v4142-verify/module.prop
+          grep -Fxq 'tools/sdd-followup-coalesce.sh' /tmp/sdd-v4142-verify/entries.txt
+          grep -Fq 'scan_lock_old_but_owner_alive' /tmp/sdd-v4142-verify/service.sh
+          grep -Fq 'bundle_ssh_atomic_refresh_failed' /tmp/sdd-v4142-verify/service.sh
+          ! grep -Fq '( $SLEEP_BIN 5; /data/adb/modules/ssh_drop_dispatcher/service.sh' /tmp/sdd-v4142-verify/service.sh
           sha256sum "$zip" > /tmp/sdd-v4142-hotfix/SHA256SUMS
       - name: Confirm no private target material in candidate source
         run: |

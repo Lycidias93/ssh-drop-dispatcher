@@ -167,6 +167,13 @@ exit 0
         self.assertEqual(inflight.read_text(), "",
                          "dead scanner reservations must be reconciled for retry")
 
+    def test_hotfix_ci_checks_extracted_files_without_sigpipe(self):
+        workflow = (ROOT / '.github/workflows/v4142-hotfix.yml').read_text()
+        self.assertNotIn('unzip -p "$zip" service.sh | grep', workflow)
+        self.assertNotIn('unzip -Z1 "$zip" | grep', workflow)
+        self.assertIn('unzip -p "$zip" service.sh > /tmp/sdd-v4142-verify/service.sh', workflow)
+        self.assertIn("grep -Fq 'scan_lock_old_but_owner_alive' /tmp/sdd-v4142-verify/service.sh", workflow)
+
     def test_production_integration(self):
         source = SERVICE.read_text()
         self.assertIn("sdd-followup-coalesce.sh", source)
