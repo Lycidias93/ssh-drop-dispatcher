@@ -9,8 +9,8 @@ import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-COORD = ROOT / "source/magisk/tools/sdd-followup-coalesce.sh"
-SERVICE = ROOT / "source/magisk/service.sh"
+COORD = ROOT / "source/vnext-issue69/tools/sdd-followup-coalesce.sh"
+SERVICE = ROOT / "source/vnext-issue69/service.sh"
 
 
 class FollowupSingleflight(unittest.TestCase):
@@ -125,10 +125,41 @@ exit 0
         self.assertFalse(self.pending().exists())
         self.assertIn("retry_preserved=yes", (self.state / "log/dispatch.log").read_text())
 
+    def test_scan_lock_stale_guard_preserves_live_owner(self):
+        import time as _time
+        lock = self.state / "scan.lock"
+        lock.mkdir()
+        timestamp = self.state / "scan.lock.ts"
+        timestamp.write_text(str(int(_time.time()) - 3600))
+        owner = lock / "owner.pid"
+        owner.write_text(str(os.getpid()))
+        source = SERVICE.read_text()
+        guard = "stale_lock_guard(){" + source.split("stale_lock_guard(){", 1)[1].split("\n}\n", 1)[0] + "\n}"
+        script = "\n".join((
+            "SCAN_LOCKDIR=$SDD_TEST_SCAN_LOCKDIR",
+            "SCAN_LOCK_TS=$SDD_TEST_SCAN_LOCK_TS",
+            "DATE_BIN=date; CAT_BIN=cat; MV_BIN=mv; RM_BIN=rm",
+            "log(){ :; }",
+            "pid_alive(){ kill -0 \"$1\" 2>/dev/null; }",
+            guard,
+            "stale_lock_guard",
+        ))
+        env = dict(self.env, SDD_TEST_SCAN_LOCKDIR=str(lock),
+                   SDD_TEST_SCAN_LOCK_TS=str(timestamp),
+                   DROP_DISPATCH_STALE_LOCK_SECONDS="10")
+        subprocess.run(["sh", "-c", script], env=env, check=True, timeout=5)
+        self.assertTrue(lock.exists(), "live scan owner must not be evicted")
+        owner.write_text("99999999")
+        subprocess.run(["sh", "-c", script], env=env, check=True, timeout=5)
+        self.assertFalse(lock.exists(), "orphaned scan lock should be released")
+        self.assertFalse(timestamp.exists())
+
     def test_production_integration(self):
         source = SERVICE.read_text()
         self.assertIn("sdd-followup-coalesce.sh", source)
         self.assertIn('"$FOLLOWUP_COORDINATOR" reconcile', source)
+        self.assertIn('/tools/sdd-followup-coalesce.sh request >/dev/null 2>&1 &', source)
+        self.assertNotIn('--scan-once inotify_event', source)
         self.assertEqual(source.count('> "$SCAN_LOCKDIR/owner.pid"'), 2)
         self.assertEqual(source.count("trap 'scan_lock_release' 0"), 2)
         self.assertNotIn("( $SLEEP_BIN 5; /data/adb/modules/ssh_drop_dispatcher/service.sh", source)
