@@ -2077,12 +2077,18 @@ stale_lock_guard(){
     log "WARN scan_lock_old_but_owner_alive age=$age"
     return 0
   fi
+  # The dead owner cannot finish its inflight reservations. Clear them while
+  # the stale lock still excludes new scanners, before releasing that lock.
+  # Done/complete/quarantine records and all Download files remain untouched.
+  if ! : > "$INFLIGHT_DB"; then
+    log "ERROR stale_scan_lock_inflight_recovery_failed age=$age"
+    return 1
+  fi
   retired="$SCAN_LOCKDIR.stale.$$.$now"
   if $MV_BIN "$SCAN_LOCKDIR" "$retired" >/dev/null 2>&1; then
     $RM_BIN -rf "$retired" >/dev/null 2>&1 || true
     [ -d "$SCAN_LOCKDIR" ] || $RM_BIN -f "$SCAN_LOCK_TS" >/dev/null 2>&1 || true
-    log "WARN stale_scan_lock_recovered age=$age owner_alive=no"
-    # Preserve inflight state: the next verified scan reconciles deliveries.
+    log "WARN stale_scan_lock_recovered age=$age owner_alive=no inflight_reconciled=yes"
   fi
 }
 

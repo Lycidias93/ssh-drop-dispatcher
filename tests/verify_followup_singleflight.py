@@ -133,11 +133,14 @@ exit 0
         timestamp.write_text(str(int(_time.time()) - 3600))
         owner = lock / "owner.pid"
         owner.write_text(str(os.getpid()))
+        inflight = self.state / "dispatch.inflight"
+        inflight.write_text("orphaned|target\\n")
         source = SERVICE.read_text()
         guard = "stale_lock_guard(){" + source.split("stale_lock_guard(){", 1)[1].split("\n}\n", 1)[0] + "\n}"
         script = "\n".join((
             "SCAN_LOCKDIR=$SDD_TEST_SCAN_LOCKDIR",
             "SCAN_LOCK_TS=$SDD_TEST_SCAN_LOCK_TS",
+            "INFLIGHT_DB=$SDD_TEST_INFLIGHT_DB",
             "DATE_BIN=date; CAT_BIN=cat; MV_BIN=mv; RM_BIN=rm",
             "log(){ :; }",
             "pid_alive(){ kill -0 \"$1\" 2>/dev/null; }",
@@ -146,13 +149,23 @@ exit 0
         ))
         env = dict(self.env, SDD_TEST_SCAN_LOCKDIR=str(lock),
                    SDD_TEST_SCAN_LOCK_TS=str(timestamp),
+                   SDD_TEST_INFLIGHT_DB=str(inflight),
                    DROP_DISPATCH_STALE_LOCK_SECONDS="10")
         subprocess.run(["sh", "-c", script], env=env, check=True, timeout=5)
         self.assertTrue(lock.exists(), "live scan owner must not be evicted")
+        self.assertEqual(inflight.read_text(), "orphaned|target\\n",
+                         "active scan inflight must remain untouched")
         owner.write_text("99999999")
+        blocked_env = dict(env, SDD_TEST_INFLIGHT_DB=str(self.root / "missing" / "dispatch.inflight"))
+        blocked = subprocess.run(["sh", "-c", script], env=blocked_env,
+                                 check=False, timeout=5, capture_output=True)
+        self.assertNotEqual(blocked.returncode, 0)
+        self.assertTrue(lock.exists(), "failed inflight recovery must retain the stale lock")
         subprocess.run(["sh", "-c", script], env=env, check=True, timeout=5)
         self.assertFalse(lock.exists(), "orphaned scan lock should be released")
         self.assertFalse(timestamp.exists())
+        self.assertEqual(inflight.read_text(), "",
+                         "dead scanner reservations must be reconciled for retry")
 
     def test_production_integration(self):
         source = SERVICE.read_text()
