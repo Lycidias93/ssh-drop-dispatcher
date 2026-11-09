@@ -10,6 +10,8 @@ SSH Drop Dispatcher is an Android/Magisk file-drop dispatcher for rooted devices
 
 The runtime is available through **CLI v3** and a loopback-only standalone **WebUI Core 0.6**. Public packages contain no private targets, private IP addresses, private hostnames, private paths, SSH private keys or ntfy tokens.
 
+**v4.14.2 hotfix candidate (#69, not published or installed):** New follow-up scans use a coalesced, bounded single-flight worker. The frozen 4.14.1 package builder and sources remain unchanged. Existing installations of 4.14.1 are **not** fixed by this repository candidate alone. Existing target routing, verified delivery, Return Channel, WebUI and Sortify are unchanged. Rollback requires restoring the backed-up prior module under the separate installation approval. Cloud1 is not enabled as a target.
+
 ## Current stable release
 
 | Field | Value |

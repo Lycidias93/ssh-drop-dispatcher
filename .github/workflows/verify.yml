@@ -54,6 +54,12 @@ jobs:
           set -euo pipefail
           bash tests/verify_rc3_workflow_contract.sh
 
+      - name: Verify issue 69 follow-up singleflight under contention
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'verify_followup_singleflight.py' -v
+
       - name: Build RC4 secure standalone WebUI candidate
         shell: bash
         run: |

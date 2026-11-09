@@ -26,7 +26,9 @@ Return Channel v1 is no longer an active roadmap milestone. It is part of the st
 - CLI v3 `sdd return ...` operations;
 - WebUI Returns inventory and bounded typed operations;
 - bounded named-file dispatch for `sdd dispatch-file`;
-- single-flight/coalesced event follow-up scans.
+- single-flight/coalesced event follow-up scans (design intent; **not actually present in the installed v4.14.1 follow-up scheduler**; see issue #69).
+
+The regression discovered on 2026-11-09 is corrected in the unreleased source by issue #69. The historic v4.14.0 line claimed coalescing but its shipped `schedule_followup()` could spawn recursively when scans held a lock. Do not treat the source-only fix as an installed runtime fix or as completion of vNext M2 (#54).
 
 The frozen design contract remains at [`RETURN_CHANNEL_V1.md`](RETURN_CHANNEL_V1.md); the stable user guide is [`RETURN_CHANNEL_V1_STABLE.md`](RETURN_CHANNEL_V1_STABLE.md).
 
