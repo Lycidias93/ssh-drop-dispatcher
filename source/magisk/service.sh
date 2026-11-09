@@ -1458,11 +1458,16 @@ fast_target_scan_once(){
     schedule_followup
     return 0
   fi
+  printf '%s\n' "$$" > "$SCAN_LOCKDIR/owner.pid" || { rmdir "$SCAN_LOCKDIR" 2>/dev/null || true; health WARN scan_lock_owner_write_failed; return 1; }
   now_epoch=$(sdd_now_epoch)
   echo "$now_epoch" > "$SCAN_LOCK_TS" 2>/dev/null || true
   echo "$now_epoch" > "$LAST_SCAN_FILE" 2>/dev/null || true
   $RM_BIN -f "$EVENT_PENDING_FILE" >/dev/null 2>&1 || true
-  trap "$RM_BIN -rf "$SCAN_LOCKDIR" "$SCAN_LOCK_TS" "$TMP_SCAN_LIST" "$TMP_PENDING_LIST" >/dev/null 2>&1 || true" 0 1 2 3 15
+  trap 'scan_lock_release' 0
+  trap 'exit 129' 1
+  trap 'exit 130' 2
+  trap 'exit 131' 3
+  trap 'exit 143' 15
 
   log "START scan_dir=$DROP_DISPATCH_SCAN_DIR reason=$reason mode=target_only"
   $SLEEP_BIN "$DROP_DISPATCH_SETTLE_SECONDS"
@@ -1501,7 +1506,7 @@ fast_target_scan_once(){
 
   log "END passes=$pass processed=$total_processed reason=$reason mode=target_only"
   health OK "$reason"
-  $RM_BIN -rf "$SCAN_LOCKDIR" "$SCAN_LOCK_TS" "$TMP_SCAN_LIST" "$TMP_PENDING_LIST" >/dev/null 2>&1 || true
+  scan_lock_release
   trap - 0 1 2 3 15
 }
 
@@ -1680,8 +1685,21 @@ queue_candidate(){
   printf "%s\n" "$f" >> "$TMP_PENDING_LIST"
 }
 
+FOLLOWUP_COORDINATOR=$MODULE_TOOLS_DIR/sdd-followup-coalesce.sh
+scan_lock_release(){
+  # Only the process that acquired the scan lock may remove it.
+  current_owner=$($CAT_BIN "$SCAN_LOCKDIR/owner.pid" 2>/dev/null || true)
+  [ "$current_owner" = "$$" ] || { log "WARN scan_lock_owner_mismatch"; return 1; }
+  $RM_BIN -rf "$SCAN_LOCKDIR" "$SCAN_LOCK_TS" "$TMP_SCAN_LIST" "$TMP_PENDING_LIST" >/dev/null 2>&1 || true
+}
 schedule_followup(){
-  ( $SLEEP_BIN 5; /data/adb/modules/ssh_drop_dispatcher/service.sh --scan-once event_followup ) >/dev/null 2>&1 &
+  # The coordinator atomically reserves one worker and coalesces all wakeups.
+  if [ -x "$FOLLOWUP_COORDINATOR" ]; then
+    "$FOLLOWUP_COORDINATOR" request || log "WARN followup_schedule_failed"
+  else
+    printf '1\n' > "$EVENT_PENDING_FILE"
+    log "ERROR followup_coordinator_missing event_pending=yes"
+  fi
 }
 
 scan_once(){
@@ -1694,11 +1712,16 @@ scan_once(){
     schedule_followup
     return 0
   fi
+  printf '%s\n' "$$" > "$SCAN_LOCKDIR/owner.pid" || { rmdir "$SCAN_LOCKDIR" 2>/dev/null || true; health WARN scan_lock_owner_write_failed; return 1; }
   now_epoch=$($DATE_BIN +%s 2>/dev/null || echo 0)
   echo "$now_epoch" > "$SCAN_LOCK_TS" 2>/dev/null || true
   echo "$now_epoch" > "$LAST_SCAN_FILE" 2>/dev/null || true
   $RM_BIN -f "$EVENT_PENDING_FILE" >/dev/null 2>&1 || true
-  trap "$RM_BIN -rf \"$SCAN_LOCKDIR\" \"$SCAN_LOCK_TS\" \"$TMP_SCAN_LIST\" \"$TMP_PENDING_LIST\" >/dev/null 2>&1 || true" 0 1 2 3 15
+  trap 'scan_lock_release' 0
+  trap 'exit 129' 1
+  trap 'exit 130' 2
+  trap 'exit 131' 3
+  trap 'exit 143' 15
 
   log "START scan_dir=$DROP_DISPATCH_SCAN_DIR reason=$reason"
   $SLEEP_BIN "$DROP_DISPATCH_SETTLE_SECONDS"
@@ -1735,7 +1758,7 @@ scan_once(){
 
   log "END passes=$pass processed=$total_processed"
   health OK "$reason"
-  $RM_BIN -rf "$SCAN_LOCKDIR" "$SCAN_LOCK_TS" "$TMP_SCAN_LIST" "$TMP_PENDING_LIST" >/dev/null 2>&1 || true
+  scan_lock_release
   trap - 0 1 2 3 15
 }
 
@@ -2043,12 +2066,23 @@ stale_lock_guard(){
   now=$($DATE_BIN +%s 2>/dev/null || echo 0)
   ts=0
   [ -f "$SCAN_LOCK_TS" ] && ts=$($CAT_BIN "$SCAN_LOCK_TS" 2>/dev/null || echo 0)
-  age=$((now - ts))
+  case "$ts" in ''|*[!0-9]*) return 0;; esac
   [ "$ts" -gt 0 ] || return 0
-  if [ "$age" -gt "${DROP_DISPATCH_STALE_LOCK_SECONDS:-600}" ]; then
-    log "WARN stale_scan_lock_removed age=$age"
-    $RM_BIN -rf "$SCAN_LOCKDIR" "$SCAN_LOCK_TS" >/dev/null 2>&1 || true
-    : > "$INFLIGHT_DB"
+  age=$((now - ts))
+  [ "$age" -gt "${DROP_DISPATCH_STALE_LOCK_SECONDS:-600}" ] || return 0
+  # A long-running scan is not stale merely because it crossed the age threshold.
+  lock_owner=$($CAT_BIN "$SCAN_LOCKDIR/owner.pid" 2>/dev/null || true)
+  case "$lock_owner" in ''|*[!0-9]*) lock_owner=0;; esac
+  if [ "$lock_owner" -gt 1 ] 2>/dev/null && pid_alive "$lock_owner"; then
+    log "WARN scan_lock_old_but_owner_alive age=$age"
+    return 0
+  fi
+  retired="$SCAN_LOCKDIR.stale.$$.$now"
+  if $MV_BIN "$SCAN_LOCKDIR" "$retired" >/dev/null 2>&1; then
+    $RM_BIN -rf "$retired" >/dev/null 2>&1 || true
+    [ -d "$SCAN_LOCKDIR" ] || $RM_BIN -f "$SCAN_LOCK_TS" >/dev/null 2>&1 || true
+    log "WARN stale_scan_lock_recovered age=$age owner_alive=no"
+    # Preserve inflight state: the next verified scan reconciles deliveries.
   fi
 }
 
@@ -2062,6 +2096,7 @@ watchdog_loop(){
       schedule_followup
     fi
     stale_lock_guard
+    [ -x "$FOLLOWUP_COORDINATOR" ] && "$FOLLOWUP_COORDINATOR" reconcile || true
     fast_target_watchdog
     health OK watchdog
     $SLEEP_BIN "$(sleep_interval_seconds)"

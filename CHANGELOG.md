@@ -2,6 +2,11 @@
 
 This changelog tracks public, user-relevant stable changes. Historical RC/build/verification bookkeeping remains available in Git history but is intentionally omitted here.
 
+## Unreleased — source-only (not installed or published)
+
+- Fixed a dispatcher slowdown where overlapping scan events could repeatedly create follow-up processes. Events now share one bounded worker with watchdog recovery instead of recursively spawning processes.
+- Protected long-running scan owners from stale-lock cleanup and retained pending delivery state for recovery.
+
 ## v4.14.1 - 2026-08-23
 
 - Fixed intermittent SSH failures that could occur when an SSH key/config bundle refresh overlapped a connection attempt. Bundle imports now avoid rewriting unchanged files and publish changed SSH files atomically.
