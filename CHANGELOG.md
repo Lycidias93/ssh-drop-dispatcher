@@ -2,10 +2,10 @@
 
 This changelog tracks public, user-relevant stable changes. Historical RC/build/verification bookkeeping remains available in Git history but is intentionally omitted here.
 
-## v4.14.2 — Hotfix candidate (not yet released)
+## v4.14.2 - 2026-11-10
 
-- Fixed a dispatcher slowdown where overlapping scan events could repeatedly create follow-up processes. Events now share one bounded worker with watchdog recovery instead of recursively spawning processes.
-- Protected long-running scan owners from stale-lock cleanup and retained pending delivery state for recovery.
+- Fixed a dispatcher slowdown where overlapping Download events could spawn too many follow-up scans. Events are now grouped into one managed worker.
+- Protected long-running scans from being incorrectly interrupted and improved recovery of pending events.
 
 ## v4.14.1 - 2026-08-23
 
