@@ -21,7 +21,8 @@ CONFIG_SHA=d4424e78bf5185dfd19330ad38669093455955235a7fb3f4a30c6e7991439598
 SERVICE_SHA=c1a54cd7fb0ceafc973adccc195494b41ae577131e04a9ee406424f58165b583
 COORD_SHA=02e6c88633f7787f2aabfe9fe8bc47d5604a13c94fd1f10e8473b7bfe6e56346
 BOOT_ID=ff143ce1-681f-4a8a-883b-daa6137f1a4d
-SMOKE_NAME='target-pi4__sdd-v4142-smoke-20261110114858.txt'
+SMOKE_LOCAL_NAME='target-pi4__sdd-v4142-smoke-20261110114858-12669.txt'
+SMOKE_REMOTE_NAME='target-pi4__sdd-v4142-smoke-20261110114858.txt'
 SMOKE_SHA=b75b24c6874910c1e04a9effd2f82330572cc797a271b4af784d5f8a86b2422e
 SMOKE_DROP=/mnt/dietpi_userdata/BACKUP/_inbox/drop
 BACKUP=
@@ -75,7 +76,7 @@ remote_proof(){
   [ "${remote_drop:-}" = "$SMOKE_DROP" ] || fail target_drop_changed
   case "${ssh_host:-}" in ''|*[!a-zA-Z0-9_.-]*) fail host_identity_invalid ;; esac
   [ -f "$SSH_CONFIG" ] || fail ssh_config_missing
-  remote_file="$SMOKE_DROP/$SMOKE_NAME"
+  remote_file="$SMOKE_DROP/$SMOKE_REMOTE_NAME"
   response="$(/data/data/com.termux/files/usr/bin/ssh -F "$SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=8 "$ssh_host" "sha256sum '$remote_file'" 2>/dev/null)" || fail remote_hash_probe_unavailable
   remote_sha="$(hex_field "$response")" || fail remote_hash_output_invalid
   [ "$remote_sha" = "$SMOKE_SHA" ] || fail remote_hash_mismatch
@@ -102,10 +103,10 @@ preflight(){
   [ "$bat" -ge 5 ] || fail battery_below_five
   printf 'PIXEL_MODULE_INSTALL_MIN_BATTERY_PERCENT=5 battery_percent=%s battery_status=%s\n' "$bat" "$status"
   queue_protected
-  grep -Fq "$SMOKE_NAME|" "$STATE/dispatch.complete" || fail smoke_delivery_record_missing
-  grep -Fq "$SMOKE_NAME|" "$STATE/dispatch.done" || fail smoke_done_record_missing
-  if [ -f "$DOWNLOAD/$SMOKE_NAME" ]; then
-    [ "$(file_sha "$DOWNLOAD/$SMOKE_NAME")" = "$SMOKE_SHA" ] || fail local_smoke_content_changed
+  grep -Fq "$SMOKE_LOCAL_NAME|" "$STATE/dispatch.complete" || fail smoke_delivery_record_missing
+  grep -Fq "$SMOKE_LOCAL_NAME|" "$STATE/dispatch.done" || fail smoke_done_record_missing
+  if [ -f "$DOWNLOAD/$SMOKE_LOCAL_NAME" ]; then
+    [ "$(file_sha "$DOWNLOAD/$SMOKE_LOCAL_NAME")" = "$SMOKE_SHA" ] || fail local_smoke_content_changed
   fi
   remote_proof
   printf 'RESULT: SDD_V4142_FINAL_PREFLIGHT_PASS enabled=0 backlog_unprotected=0 prior_smoke_sha256=match\n'
@@ -143,9 +144,9 @@ run(){
   [ "$(file_sha "$BACKUP/config.env")" = "$CONFIG_SHA" ] || fail backup_invalid
   trap 'exit_trap' 0
   . "$STATE/config/targets.d/pi4.conf"
-  remote_file="$SMOKE_DROP/$SMOKE_NAME"
+  remote_file="$SMOKE_DROP/$SMOKE_REMOTE_NAME"
   /data/data/com.termux/files/usr/bin/ssh -F "$SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=8 "$ssh_host" "test -f '$remote_file' && test ! -L '$remote_file' && sha256sum '$remote_file' | grep -q '^$SMOKE_SHA ' && rm -- '$remote_file'" >/dev/null 2>&1 || fail exact_remote_canary_cleanup_failed
-  if [ -f "$DOWNLOAD/$SMOKE_NAME" ]; then rm -f "$DOWNLOAD/$SMOKE_NAME" || fail local_canary_cleanup_failed; fi
+  if [ -f "$DOWNLOAD/$SMOKE_LOCAL_NAME" ]; then rm -f "$DOWNLOAD/$SMOKE_LOCAL_NAME" || fail local_canary_cleanup_failed; fi
   /system/bin/sh "$SERVICE" --enable > "$BACKUP/enable.log" 2>&1 || fail enable_failed
   sleep 4
   live_pids
