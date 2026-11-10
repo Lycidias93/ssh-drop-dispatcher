@@ -238,7 +238,7 @@ class V4142ActivationController(unittest.TestCase):
             self.assertIn(expected, src)
         self.assertIn("SMOKE_LOCAL_NAME='target-pi4__sdd-v4142-smoke-20261110114858-12669.txt'", src)
         self.assertIn("SMOKE_REMOTE_NAME='target-pi4__sdd-v4142-smoke-20261110114858.txt'", src)
-        self.assertIn('grep -Fq "$SMOKE_LOCAL_NAME|" "$STATE/dispatch.complete"', src)
+        self.assertIn('grep -Fqx "$SMOKE_LOCAL_NAME|3501100229:54" "$STATE/dispatch.complete"', src)
         self.assertIn('remote_file="$SMOKE_DROP/$SMOKE_REMOTE_NAME"', src)
         self.assertNotIn('$SMOKE_NAME', src)
         self.assertNotIn('service.sh --dispatch-now', src)
