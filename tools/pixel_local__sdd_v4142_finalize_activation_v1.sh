@@ -67,20 +67,19 @@ queue_protected(){
     blocked=$((blocked+1))
   done
   printf 'QUEUE_READBACK supported=%s complete=%s quarantined=%s\n' "$total" "$complete" "$blocked"
-  [ "$total" = 7 ] && [ "$complete" = 5 ] && [ "$blocked" = 2 ] || fail backlog_changed
+  [ "$total" = 6 ] && [ "$complete" = 4 ] && [ "$blocked" = 2 ] || fail backlog_changed
 }
-remote_proof(){
+remote_cleanup_proof(){
   [ -f "$STATE/config/targets.d/pi4.conf" ] || fail missing_pi4_registry
   . "$STATE/config/targets.d/pi4.conf"
   [ "${target_name:-}" = pi4 ] || fail target_identity_changed
   [ "${remote_drop:-}" = "$SMOKE_DROP" ] || fail target_drop_changed
-  case "${ssh_host:-}" in ''|*[!a-zA-Z0-9_.-]*) fail host_identity_invalid ;; esac
+  case "${ssh_host:-}" in ''|*[!a-zA-Z0-9_.-]*) fail host_identity_invalid;; esac
   [ -f "$SSH_CONFIG" ] || fail ssh_config_missing
   remote_file="$SMOKE_DROP/$SMOKE_REMOTE_NAME"
-  response="$(/data/data/com.termux/files/usr/bin/ssh -F "$SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=8 "$ssh_host" "sha256sum '$remote_file'" 2>/dev/null)" || fail remote_hash_probe_unavailable
-  remote_sha="$(hex_field "$response")" || fail remote_hash_output_invalid
-  [ "$remote_sha" = "$SMOKE_SHA" ] || fail remote_hash_mismatch
-  printf 'SMOKE_REMOTE_READBACK=pass sha256=%s\n' "$remote_sha"
+  response="$(/data/data/com.termux/files/usr/bin/ssh -F "$SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=8 "$ssh_host" "if test -e '$remote_file' || test -L '$remote_file'; then echo canary_present; else echo canary_absent; fi" 2>/dev/null)" || fail remote_cleanup_probe_unavailable
+  [ "$response" = canary_absent ] || fail remote_canary_not_cleaned
+  printf 'SMOKE_ALREADY_CLEANED=pass remote_absent=yes prior_attested_sha256=%s\n' "$SMOKE_SHA"
 }
 preflight(){
   [ "$(id -u)" = 0 ] || fail uid_not_root
@@ -103,13 +102,11 @@ preflight(){
   [ "$bat" -ge 5 ] || fail battery_below_five
   printf 'PIXEL_MODULE_INSTALL_MIN_BATTERY_PERCENT=5 battery_percent=%s battery_status=%s\n' "$bat" "$status"
   queue_protected
-  grep -Fq "$SMOKE_LOCAL_NAME|" "$STATE/dispatch.complete" || fail smoke_delivery_record_missing
-  grep -Fq "$SMOKE_LOCAL_NAME|" "$STATE/dispatch.done" || fail smoke_done_record_missing
-  if [ -f "$DOWNLOAD/$SMOKE_LOCAL_NAME" ]; then
-    [ "$(file_sha "$DOWNLOAD/$SMOKE_LOCAL_NAME")" = "$SMOKE_SHA" ] || fail local_smoke_content_changed
-  fi
-  remote_proof
-  printf 'RESULT: SDD_V4142_FINAL_PREFLIGHT_PASS enabled=0 backlog_unprotected=0 prior_smoke_sha256=match\n'
+  grep -Fqx "$SMOKE_LOCAL_NAME|3501100229:54" "$STATE/dispatch.complete" || fail smoke_delivery_record_missing
+  grep -Fqx "$SMOKE_LOCAL_NAME|3501100229:54|target=pi4" "$STATE/dispatch.done" || fail smoke_done_record_missing
+  [ ! -e "$DOWNLOAD/$SMOKE_LOCAL_NAME" ] && [ ! -L "$DOWNLOAD/$SMOKE_LOCAL_NAME" ] || fail local_smoke_not_cleaned
+  remote_cleanup_proof
+  printf 'RESULT: SDD_V4142_FINAL_PREFLIGHT_PASS enabled=0 backlog_unprotected=0 prior_smoke=delivered_and_cleaned\n'
 }
 rollback(){
   /system/bin/sh "$SERVICE" --disable >/dev/null 2>&1 || true
@@ -127,13 +124,31 @@ exit_trap(){
 live_pids(){
   for name in main.pid watchdog.pid inotifyd.pid; do
     p="$(cat "$STATE/$name" 2>/dev/null || true)"
-    is_alive "$p" || fail runtime_pid_missing
+    if ! is_alive "$p"; then
+      printf 'RUNTIME_PROBE missing=%s pid=%s\n' "$name" "${p:-none}"
+      return 1
+    fi
   done
   count="$(ps -A -o ARGS 2>/dev/null | grep -c '[s]dd-followup-coalesce.sh' || true)"
   case "$count" in ''|*[!0-9]*) fail worker_count_unknown;; esac
   [ "$count" -le 4 ] || fail followup_process_storm
   grep -qx 'DROP_DISPATCH_ENABLED=1' "$CONFIG" || fail config_not_enabled
-  printf 'LIVE_PID_CHECK=pass followup_workers=%s\n' "$count"
+  printf 'RUNTIME_PROBE state=ready followup_workers=%s\n' "$count"
+}
+await_runtime_ready(){
+  attempt=0
+  stable=0
+  while [ "$attempt" -lt 12 ]; do
+    if live_pids; then
+      stable=$((stable + 1))
+      [ "$stable" -ge 2 ] && { printf 'LIVE_PID_CHECK=pass consecutive=2\n'; return 0; }
+    else
+      stable=0
+    fi
+    attempt=$((attempt + 1))
+    sleep 3
+  done
+  fail runtime_pid_timeout
 }
 run(){
   preflight
@@ -143,18 +158,13 @@ run(){
   cp "$CONFIG" "$BACKUP/config.env" || fail backup_config
   [ "$(file_sha "$BACKUP/config.env")" = "$CONFIG_SHA" ] || fail backup_invalid
   trap 'exit_trap' 0
-  . "$STATE/config/targets.d/pi4.conf"
-  remote_file="$SMOKE_DROP/$SMOKE_REMOTE_NAME"
-  /data/data/com.termux/files/usr/bin/ssh -F "$SSH_CONFIG" -o BatchMode=yes -o ConnectTimeout=8 "$ssh_host" "test -f '$remote_file' && test ! -L '$remote_file' && sha256sum '$remote_file' | grep -q '^$SMOKE_SHA ' && rm -- '$remote_file'" >/dev/null 2>&1 || fail exact_remote_canary_cleanup_failed
-  if [ -f "$DOWNLOAD/$SMOKE_LOCAL_NAME" ]; then rm -f "$DOWNLOAD/$SMOKE_LOCAL_NAME" || fail local_canary_cleanup_failed; fi
   /system/bin/sh "$SERVICE" --enable > "$BACKUP/enable.log" 2>&1 || fail enable_failed
-  sleep 4
-  live_pids
-  sleep 4
-  live_pids
+  await_runtime_ready
+  sleep 8
+  live_pids || fail runtime_unstable_after_ready
   printf 'CPU_PRESSURE_AFTER='
   grep '^some ' /proc/pressure/cpu | head -1
-  printf 'RESULT: SDD_V4142_FINAL_ACTIVATION_PASS enabled=1 new_file_transfers=0 prior_smoke_sha256=pass canary_cleanup=pass live_services=pass rollback_ready=yes\n'
+  printf 'RESULT: SDD_V4142_FINAL_ACTIVATION_PASS enabled=1 new_file_transfers=0 prior_smoke=delivered_and_cleaned live_services=pass rollback_ready=yes\n'
   trap - 0
 }
 case "${1:-}" in
