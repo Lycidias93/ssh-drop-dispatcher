@@ -185,5 +185,61 @@ exit 0
         self.assertNotIn("( $SLEEP_BIN 5; /data/adb/modules/ssh_drop_dispatcher/service.sh", source)
 
 
+class V4142ActivationController(unittest.TestCase):
+    """Test the exact operational controller's remote-SHA evidence boundary."""
+
+    def setUp(self):
+        self.controller = ROOT / "tools/pixel_local__sdd_v4142_finalize_activation_v1.sh"
+        self.expected = "b75b24c6874910c1e04a9effd2f82330572cc797a271b4af784d5f8a86b2422e"
+
+    def parse(self, raw):
+        return subprocess.run(
+            ["/bin/sh", str(self.controller), "fixture-parse", raw],
+            check=False, capture_output=True, text=True, timeout=5,
+        )
+
+    def test_root_sha256_readback_parses_exact_value(self):
+        response = self.parse(self.expected + "  /mnt/dietpi_userdata/BACKUP/_inbox/drop/canary.txt")
+        self.assertEqual(response.returncode, 0, response.stderr)
+        self.assertIn("RESULT: SDD_V4142_HEX_PARSE_PASS", response.stdout)
+        self.assertIn(self.expected, response.stdout)
+
+    def test_read_permission_or_unavailable_evidence_is_not_a_hash(self):
+        for bad in (
+            "sha256sum: Permission denied",
+            "sha256sum: Keine Berechtigung",
+            "sha256sum: No such file or directory",
+            "1234",
+            "g" * 64,
+            self.expected[:-1],
+        ):
+            with self.subTest(raw=bad):
+                response = self.parse(bad)
+                self.assertEqual(response.returncode, 3)
+                self.assertIn("RESULT: SDD_V4142_HEX_PARSE_STOP", response.stdout)
+                self.assertNotIn("HEX_PARSE_PASS", response.stdout)
+
+    def test_activation_keeps_production_safety_contract(self):
+        src = self.controller.read_text()
+        for expected in (
+            'DROP_DISPATCH_ENABLED=0',
+            'DROP_DISPATCH_ENABLED=1',
+            'backlog_changed',
+            'remote_hash_probe_unavailable',
+            'remote_hash_output_invalid',
+            'remote_hash_mismatch',
+            'original_rollback_missing',
+            'exact_remote_canary_cleanup_failed',
+            'followup_process_storm',
+            '/system/bin/sh "$SERVICE" --disable',
+            '/system/bin/sh "$SERVICE" --enable',
+            'RESULT: SDD_V4142_FINAL_ACTIVATION_PASS',
+        ):
+            self.assertIn(expected, src)
+        self.assertNotIn('service.sh --dispatch-now', src)
+        self.assertNotIn('git push', src)
+        self.assertNotIn('magisk --install-module', src)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
