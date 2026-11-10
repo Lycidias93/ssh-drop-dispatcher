@@ -66,7 +66,7 @@ queue_protected(){
     blocked=$((blocked+1))
   done
   printf 'QUEUE_READBACK supported=%s complete=%s quarantined=%s\n' "$total" "$complete" "$blocked"
-  [ "$total" = 6 ] && [ "$complete" = 4 ] && [ "$blocked" = 2 ] || fail backlog_changed
+  [ "$total" = 7 ] && [ "$complete" = 5 ] && [ "$blocked" = 2 ] || fail backlog_changed
 }
 remote_proof(){
   [ -f "$STATE/config/targets.d/pi4.conf" ] || fail missing_pi4_registry
