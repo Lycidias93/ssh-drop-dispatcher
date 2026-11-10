@@ -225,11 +225,11 @@ class V4142ActivationController(unittest.TestCase):
             'DROP_DISPATCH_ENABLED=0',
             'DROP_DISPATCH_ENABLED=1',
             'backlog_changed',
-            'remote_hash_probe_unavailable',
-            'remote_hash_output_invalid',
-            'remote_hash_mismatch',
+            'remote_cleanup_probe_unavailable',
+            'remote_canary_not_cleaned',
+            'local_smoke_not_cleaned',
             'original_rollback_missing',
-            'exact_remote_canary_cleanup_failed',
+            'runtime_pid_timeout',
             'followup_process_storm',
             '/system/bin/sh "$SERVICE" --disable',
             '/system/bin/sh "$SERVICE" --enable',
@@ -244,6 +244,29 @@ class V4142ActivationController(unittest.TestCase):
         self.assertNotIn('service.sh --dispatch-now', src)
         self.assertNotIn('git push', src)
         self.assertNotIn('magisk --install-module', src)
+
+    def test_postcleanup_smoke_evidence_is_exact_and_no_second_transfer(self):
+        src = self.controller.read_text()
+        self.assertIn('[ "$total" = 6 ] && [ "$complete" = 4 ] && [ "$blocked" = 2 ]', src)
+        self.assertIn('grep -Fqx "$SMOKE_LOCAL_NAME|3501100229:54" "$STATE/dispatch.complete"', src)
+        self.assertIn('grep -Fqx "$SMOKE_LOCAL_NAME|3501100229:54|target=pi4" "$STATE/dispatch.done"', src)
+        self.assertIn('remote_cleanup_proof', src)
+        self.assertIn('canary_absent', src)
+        self.assertNotIn("rm -- '$remote_file'", src)
+        self.assertNotIn('remote_hash_mismatch', src)
+        self.assertNotIn('service.sh --dispatch-now', src)
+
+    def test_runtime_readiness_uses_bounded_consecutive_live_pid_checks(self):
+        src = self.controller.read_text()
+        self.assertIn('await_runtime_ready(){', src)
+        self.assertIn('while [ "$attempt" -lt 12 ]; do', src)
+        self.assertIn('sleep 3', src)
+        self.assertIn('[ "$stable" -ge 2 ]', src)
+        self.assertIn('fail runtime_pid_timeout', src)
+        self.assertIn('fail runtime_unstable_after_ready', src)
+        self.assertIn('RUNTIME_PROBE missing=%s pid=%s', src)
+        self.assertIn('for name in main.pid watchdog.pid inotifyd.pid; do', src)
+        self.assertNotIn('sleep 4\n  live_pids', src)
 
 
 if __name__ == "__main__":
