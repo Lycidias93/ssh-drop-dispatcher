@@ -22,6 +22,9 @@ PUBLISHED_ASSET = "https://github.com/Lycidias93/ssh-drop-dispatcher/releases/do
 PUBLISHED_ASSET_SHA256 = "d8bc263937a20eea16625bf840f360889668fbff2c8f12a843a9d57f36ac6a9a"
 PUBLISHED_ASSET_BYTES = 4849663
 MARKER = "RESULT: SDD_V4142_HOTFIX_BUILD_DONE outcome=success workflow_exit_code=0"
+ANDROID_BOOL_OLD_LINE = "  sed -n 's/.*\"'\"$key\"'\"[[:space:]]*:[[:space:]]*\\(true\\|false\\).*/\\1/p' \"$file\" | head -n 1"
+ANDROID_BOOL_FIXED_LINE = "  sed -n 's/.*\"'\"$key\"'\"[[:space:]]*:[[:space:]]*\\(true\\).*/\\1/p; s/.*\"'\"$key\"'\"[[:space:]]*:[[:space:]]*\\(false\\).*/\\1/p' \"$file\" | head -n 1"
+ORIGINAL_WEBUI_ADAPTER_SHA256 = "65894dd1b1c06951a9a63e7e1f52006a722e98d0db3d051927b7b03115c50249"
 
 def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -92,6 +95,21 @@ def bundle_webui_assets(stage: Path) -> None:
         if ('href="' + forbidden + '"') in index or ('src="' + forbidden + '"') in index:
             raise RuntimeError("webui_unserved_static_reference:" + forbidden)
 
+
+def patch_android_toybox_boolean(source: str) -> str:
+    """Use only POSIX BREs: Android Toybox sed does not support GNU \\| alternation."""
+    if source.count(ANDROID_BOOL_OLD_LINE) != 1:
+        raise RuntimeError("unexpected_webui_boolean_parser")
+    return source.replace(ANDROID_BOOL_OLD_LINE, ANDROID_BOOL_FIXED_LINE, 1)
+
+
+def patch_webui_adapter(stage: Path) -> None:
+    adapter = stage / "bin/module-control-base"
+    if digest(adapter) != ORIGINAL_WEBUI_ADAPTER_SHA256:
+        raise RuntimeError("frozen_webui_adapter_baseline_mismatch")
+    adapter.write_text(patch_android_toybox_boolean(adapter.read_text()))
+    run("sh", "-n", adapter)
+
 def build(output: Path) -> None:
     validate_source()
     with tempfile.TemporaryDirectory(prefix="sdd-v4142-hotfix-") as name:
@@ -127,13 +145,14 @@ def build(output: Path) -> None:
         content = content.replace("versionCode=4140100\n", "versionCode=4140200\n", 1)
         prop.write_text(content)
         bundle_webui_assets(stage)
+        patch_webui_adapter(stage)
         shutil.copyfile(COORDINATOR, stage / "tools/sdd-followup-coalesce.sh")
         (stage / "tools/sdd-followup-coalesce.sh").chmod(0o755)
         current = {p.relative_to(stage).as_posix(): digest(p)
                    for p in stage.rglob("*") if p.is_file()}
         changed = {p for p in original if original[p] != current.get(p)}
         added = set(current) - set(original)
-        if changed != {"service.sh", "module.prop", "webroot/index.html", "webroot/app.js", "webroot/app.css"} or added != {"tools/sdd-followup-coalesce.sh"}:
+        if changed != {"service.sh", "module.prop", "webroot/index.html", "webroot/app.js", "webroot/app.css", "bin/module-control-base"} or added != {"tools/sdd-followup-coalesce.sh"}:
             raise RuntimeError(f"unexpected_hotfix_package_delta changed={changed} added={added}")
         first, second = temp / "first.zip", temp / "second.zip"
         for path in (first, second):
@@ -149,6 +168,8 @@ def build(output: Path) -> None:
                 raise RuntimeError("service_readback_mismatch")
             if z.read("tools/sdd-followup-coalesce.sh") != COORDINATOR.read_bytes():
                 raise RuntimeError("coordinator_readback_mismatch")
+            if z.read("bin/module-control-base") != (stage / "bin/module-control-base").read_bytes():
+                raise RuntimeError("android_toybox_adapter_readback_mismatch")
             page = z.read("webroot/index.html")
             if b'sdd-ui.js"' in page or b'sdd-ui.css"' in page:
                 raise RuntimeError("webui_unserved_assets_in_page")
@@ -163,7 +184,7 @@ def build(output: Path) -> None:
         print(f"artifact={output}")
         print(f"artifact_bytes={output.stat().st_size}")
         print(f"artifact_sha256={digest(output)}")
-        print("package_delta=service.sh,module.prop,tools/sdd-followup-coalesce.sh,webroot/index.html,webroot/app.js,webroot/app.css")
+        print("package_delta=service.sh,module.prop,tools/sdd-followup-coalesce.sh,webroot/index.html,webroot/app.js,webroot/app.css,bin/module-control-base")
         print("production_installed=no")
         print(MARKER)
 

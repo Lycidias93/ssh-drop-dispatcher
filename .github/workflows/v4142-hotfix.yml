@@ -29,6 +29,7 @@ jobs:
           sh -n source/vnext-issue69/tools/sdd-followup-coalesce.sh
           python3 -m unittest discover -s tests -p 'verify_followup_singleflight.py' -v
           python3 -m unittest discover -s tests -p 'verify_v4142_webui_static_bundle.py' -v
+          python3 -m unittest discover -s tests -p 'verify_v4142_android_toybox_boolean.py' -v
       - name: Build deterministic hotfix candidate
         run: |
           set -euo pipefail
@@ -40,6 +41,10 @@ jobs:
           # Extract completely before grep: with pipefail, grep -q can SIGPIPE unzip.
           unzip -p "$zip" module.prop > /tmp/sdd-v4142-verify/module.prop
           unzip -p "$zip" service.sh > /tmp/sdd-v4142-verify/service.sh
+          unzip -p "$zip" bin/module-control-base > /tmp/sdd-v4142-verify/module-control-base
+          sh -n /tmp/sdd-v4142-verify/module-control-base
+          ! grep -Fq '\(true\|false\)' /tmp/sdd-v4142-verify/module-control-base
+          grep -Fq '\(true\).*/\1/p; s/' /tmp/sdd-v4142-verify/module-control-base
           unzip -p "$zip" webroot/index.html > /tmp/sdd-v4142-verify/index.html
           unzip -p "$zip" webroot/app.js > /tmp/sdd-v4142-verify/app.js
           unzip -p "$zip" webroot/app.css > /tmp/sdd-v4142-verify/app.css
