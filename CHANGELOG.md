@@ -6,6 +6,7 @@ This changelog tracks public, user-relevant stable changes. Historical RC/build/
 
 - Fixed a dispatcher slowdown where overlapping Download events could spawn too many follow-up scans. Events are now grouped into one managed worker.
 - Protected long-running scans from being incorrectly interrupted and improved recovery of pending events.
+- Fixed saving notification settings in the standalone WebUI on Android.
 
 ## v4.14.1 - 2026-08-23
 
