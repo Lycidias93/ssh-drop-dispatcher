@@ -4,6 +4,7 @@
 - Fixed heavy slowdown when many Download events arrived during an active scan. The dispatcher now groups follow-up events instead of starting overlapping scan processes.
 - Prevented a long-running, healthy scan from being treated as a stale lock and interrupted.
 - Improved recovery of pending events when a scan is temporarily busy or a worker needs to restart.
+- Fixed standalone WebUI notification settings not saving correctly on Android.
 
 ## Updating
 Install the v4.14.2 Magisk ZIP as a normal update over an existing SSH Drop Dispatcher installation and restart Android to activate the updated module scripts. Back up your current module and persistent configuration before updating.
