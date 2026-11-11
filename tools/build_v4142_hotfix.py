@@ -66,13 +66,13 @@ def bundle_webui_assets(stage: Path) -> None:
     index_path = root / "index.html"
     index = index_path.read_text(encoding="utf-8")
     for entry in (
-        '  <link rel="stylesheet" href="sdd-ui.css">\\n',
-        '  <script src="sdd-ui.js"></script>\\n',
+        '  <link rel="stylesheet" href="sdd-ui.css">\n',
+        '  <script src="sdd-ui.js"></script>\n',
     ):
         if index.count(entry) != 1:
             raise RuntimeError("missing_or_duplicated_sdd_static_reference:" + entry.strip())
         index = index.replace(entry, "", 1)
-    index_path.write_text(index, encoding="utf-8", newline="\\n")
+    index_path.write_text(index, encoding="utf-8", newline="\n")
     for primary, overlay, label in (
         ("app.css", "sdd-ui.css", "SDD module styles"),
         ("app.js", "sdd-ui.js", "SDD module controls"),
@@ -84,8 +84,8 @@ def bundle_webui_assets(stage: Path) -> None:
         if primary == "app.js":
             if not main.rstrip().endswith(b"})();") or not extra.lstrip().startswith(b"(() => {") or not extra.rstrip().endswith(b"})();"):
                 raise RuntimeError("webui_iife_contract_changed")
-        banner = ("\\n/* " + label + " (bundled for pinned Core static routes) */\\n").encode()
-        (root / primary).write_bytes(main + banner + extra + b"\\n")
+        banner = ("\n/* " + label + " (bundled for pinned Core static routes) */\n").encode()
+        (root / primary).write_bytes(main + banner + extra + b"\n")
     for forbidden in ("sdd-ui.css", "sdd-ui.js"):
         if ('href="' + forbidden + '"') in index or ('src="' + forbidden + '"') in index:
             raise RuntimeError("webui_unserved_static_reference:" + forbidden)
@@ -150,9 +150,9 @@ def build(output: Path) -> None:
             page = z.read("webroot/index.html")
             if b'sdd-ui.js"' in page or b'sdd-ui.css"' in page:
                 raise RuntimeError("webui_unserved_assets_in_page")
-            if not z.read("webroot/app.js").endswith((stage / "webroot/sdd-ui.js").read_bytes() + b"\\n"):
+            if not z.read("webroot/app.js").endswith((stage / "webroot/sdd-ui.js").read_bytes() + b"\n"):
                 raise RuntimeError("webui_script_bundle_not_exact")
-            if not z.read("webroot/app.css").endswith((stage / "webroot/sdd-ui.css").read_bytes() + b"\\n"):
+            if not z.read("webroot/app.css").endswith((stage / "webroot/sdd-ui.css").read_bytes() + b"\n"):
                 raise RuntimeError("webui_style_bundle_not_exact")
         output.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(first, output)
