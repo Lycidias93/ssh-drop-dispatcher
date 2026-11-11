@@ -54,6 +54,42 @@ def validate_source() -> None:
     run("sh", "-n", FIXED)
     run("sh", "-n", COORDINATOR)
 
+
+def bundle_webui_assets(stage: Path) -> None:
+    """Keep the pinned Core static-route allowlist unchanged.
+
+    SDD CSS/JS are module-specific overlays, so compose them into the
+    already-allowlisted app.css/app.js rather than serving extra paths.
+    Both JS files are independent IIFEs; append SDD after Core app.js.
+    """
+    root = stage / "webroot"
+    index_path = root / "index.html"
+    index = index_path.read_text(encoding="utf-8")
+    for entry in (
+        '  <link rel="stylesheet" href="sdd-ui.css">\\n',
+        '  <script src="sdd-ui.js"></script>\\n',
+    ):
+        if index.count(entry) != 1:
+            raise RuntimeError("missing_or_duplicated_sdd_static_reference:" + entry.strip())
+        index = index.replace(entry, "", 1)
+    index_path.write_text(index, encoding="utf-8", newline="\\n")
+    for primary, overlay, label in (
+        ("app.css", "sdd-ui.css", "SDD module styles"),
+        ("app.js", "sdd-ui.js", "SDD module controls"),
+    ):
+        main = (root / primary).read_bytes()
+        extra = (root / overlay).read_bytes()
+        if not main or not extra:
+            raise RuntimeError("missing_webui_bundle_source:" + overlay)
+        if primary == "app.js":
+            if not main.rstrip().endswith(b"})();") or not extra.lstrip().startswith(b"(() => {") or not extra.rstrip().endswith(b"})();"):
+                raise RuntimeError("webui_iife_contract_changed")
+        banner = ("\\n/* " + label + " (bundled for pinned Core static routes) */\\n").encode()
+        (root / primary).write_bytes(main + banner + extra + b"\\n")
+    for forbidden in ("sdd-ui.css", "sdd-ui.js"):
+        if ('href="' + forbidden + '"') in index or ('src="' + forbidden + '"') in index:
+            raise RuntimeError("webui_unserved_static_reference:" + forbidden)
+
 def build(output: Path) -> None:
     validate_source()
     with tempfile.TemporaryDirectory(prefix="sdd-v4142-hotfix-") as name:
@@ -88,13 +124,14 @@ def build(output: Path) -> None:
         content = content.replace("version=4.14.1\n", "version=4.14.2\n", 1)
         content = content.replace("versionCode=4140100\n", "versionCode=4140200\n", 1)
         prop.write_text(content)
+        bundle_webui_assets(stage)
         shutil.copyfile(COORDINATOR, stage / "tools/sdd-followup-coalesce.sh")
         (stage / "tools/sdd-followup-coalesce.sh").chmod(0o755)
         current = {p.relative_to(stage).as_posix(): digest(p)
                    for p in stage.rglob("*") if p.is_file()}
         changed = {p for p in original if original[p] != current.get(p)}
         added = set(current) - set(original)
-        if changed != {"service.sh", "module.prop"} or added != {"tools/sdd-followup-coalesce.sh"}:
+        if changed != {"service.sh", "module.prop", "webroot/index.html", "webroot/app.js", "webroot/app.css"} or added != {"tools/sdd-followup-coalesce.sh"}:
             raise RuntimeError(f"unexpected_hotfix_package_delta changed={changed} added={added}")
         first, second = temp / "first.zip", temp / "second.zip"
         for path in (first, second):
@@ -110,6 +147,13 @@ def build(output: Path) -> None:
                 raise RuntimeError("service_readback_mismatch")
             if z.read("tools/sdd-followup-coalesce.sh") != COORDINATOR.read_bytes():
                 raise RuntimeError("coordinator_readback_mismatch")
+            page = z.read("webroot/index.html")
+            if b'sdd-ui.js"' in page or b'sdd-ui.css"' in page:
+                raise RuntimeError("webui_unserved_assets_in_page")
+            if not z.read("webroot/app.js").endswith((stage / "webroot/sdd-ui.js").read_bytes() + b"\\n"):
+                raise RuntimeError("webui_script_bundle_not_exact")
+            if not z.read("webroot/app.css").endswith((stage / "webroot/sdd-ui.css").read_bytes() + b"\\n"):
+                raise RuntimeError("webui_style_bundle_not_exact")
         output.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(first, output)
         print(f"version={VERSION}")
@@ -117,7 +161,7 @@ def build(output: Path) -> None:
         print(f"artifact={output}")
         print(f"artifact_bytes={output.stat().st_size}")
         print(f"artifact_sha256={digest(output)}")
-        print("package_delta=service.sh,module.prop,tools/sdd-followup-coalesce.sh")
+        print("package_delta=service.sh,module.prop,tools/sdd-followup-coalesce.sh,webroot/index.html,webroot/app.js,webroot/app.css")
         print("production_installed=no")
         print(MARKER)
 
