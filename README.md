@@ -10,15 +10,15 @@ SSH Drop Dispatcher is an Android/Magisk file-drop dispatcher for rooted devices
 
 The runtime is available through **CLI v3** and a loopback-only standalone **WebUI Core 0.6**. Public packages contain no private targets, private IP addresses, private hostnames, private paths, SSH private keys or ntfy tokens.
 
-**v4.14.2 hotfix candidate (#69, not published or installed):** New follow-up scans use a coalesced, bounded single-flight worker. The frozen 4.14.1 package builder and sources remain unchanged. Existing installations of 4.14.1 are **not** fixed by this repository candidate alone. Existing target routing, verified delivery, Return Channel, WebUI and Sortify are unchanged. Rollback requires restoring the backed-up prior module under the separate installation approval. Cloud1 is not enabled as a target.
+**v4.14.2 stable hotfix (#69):** Download events now share one bounded follow-up worker instead of spawning overlapping scan processes. Long-running scan ownership and event recovery are hardened. The WebUI includes its SDD-specific styles and controls through the pinned Core's supported static assets. Existing target routing, SHA-256 verified delivery, Return Channel and Sortify behavior are preserved. Back up the installed module/configuration before updating and reboot after installing the Magisk ZIP. Cloud1 is not enabled as a target.
 
 ## Current stable release
 
 | Field | Value |
 |---|---|
-| Public release | `4.14.0` |
-| versionCode | `4140005` |
-| Release asset | `ssh-drop-dispatcher-magisk-v4.14.0.zip` |
+| Public release | `4.14.2` |
+| versionCode | `4140200` |
+| Release asset | `ssh-drop-dispatcher-magisk-v4.14.2.zip` |
 | Module ID | `ssh_drop_dispatcher` |
 | Runtime SoT | `/data/adb/ssh-drop-dispatcher` |
 | Magisk module path | `/data/adb/modules/ssh_drop_dispatcher` |
@@ -28,7 +28,7 @@ The runtime is available through **CLI v3** and a loopback-only standalone **Web
 | Sortify marker policy | `v4115` |
 | Update metadata | `update.json` |
 
-Download the package and checksum file from the [v4.14.0 GitHub release](https://github.com/Lycidias93/ssh-drop-dispatcher/releases/tag/v4.14.0).
+Download the package and checksum file from the [v4.14.2 GitHub release](https://github.com/Lycidias93/ssh-drop-dispatcher/releases/tag/v4.14.2).
 
 ## Highlights
 
@@ -75,7 +75,7 @@ A missing required Bash interpreter is fail-closed. Python payload delivery rema
 
 ## Install / update
 
-1. Download `ssh-drop-dispatcher-magisk-v4.14.0.zip` from the [v4.14.0 release](https://github.com/Lycidias93/ssh-drop-dispatcher/releases/tag/v4.14.0).
+1. Download `ssh-drop-dispatcher-magisk-v4.14.2.zip` from the [v4.14.2 release](https://github.com/Lycidias93/ssh-drop-dispatcher/releases/tag/v4.14.2).
 2. Optionally verify the archive against the release `SHA256SUMS` asset.
 3. Install the ZIP through Magisk.
 4. Reboot Android normally.
@@ -292,10 +292,11 @@ The user-facing delta since `v4.13.0` is:
 - bounded named-file dispatch for `dispatch-file`;
 - single-flight/coalesced event follow-up scans to reduce lock contention.
 
-See [v4.14.0 release notes](RELEASE_NOTES_V4.14.0.md) and the [Changelog](CHANGELOG.md).
+See [v4.14.2 release notes](RELEASE_NOTES_V4.14.2.md) and the [Changelog](CHANGELOG.md).
 
 ## Documentation
 
+- [v4.14.2 release notes](RELEASE_NOTES_V4.14.2.md)
 - [v4.14.0 release notes](RELEASE_NOTES_V4.14.0.md)
 - [Return Channel v1 stable guide](docs/RETURN_CHANNEL_V1_STABLE.md)
 - [Return Channel v1 contract](docs/RETURN_CHANNEL_V1.md)
