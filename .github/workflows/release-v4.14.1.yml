@@ -80,5 +80,5 @@ jobs:
           gh release download v4.14.1 --repo "$GITHUB_REPOSITORY" --dir /tmp/sdd-release-verify --pattern 'ssh-drop-dispatcher-magisk-v4.14.1.zip' --pattern 'SHA256SUMS' --clobber
           cmp /tmp/sdd-release-v4141/ssh-drop-dispatcher-magisk-v4.14.1.zip /tmp/sdd-release-verify/ssh-drop-dispatcher-magisk-v4.14.1.zip
           cmp /tmp/sdd-release-v4141/SHA256SUMS /tmp/sdd-release-verify/SHA256SUMS
-          echo 'RESULT: SDD_V4141_PUBLIC_RELEASE_DONE outcome=success workflow_exit_code=0'
+          echo 'RESULT: SDD_V4141_ARCHIVE_VERIFY_PASS outcome=success workflow_exit_code=0'
 
