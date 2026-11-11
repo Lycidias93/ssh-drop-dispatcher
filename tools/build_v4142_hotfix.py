@@ -77,6 +77,8 @@ def bundle_webui_assets(stage: Path) -> None:
         ("app.css", "sdd-ui.css", "SDD module styles"),
         ("app.js", "sdd-ui.js", "SDD module controls"),
     ):
+        if not (root / primary).is_file() or not (root / overlay).is_file():
+            raise RuntimeError("missing_webui_bundle_source:" + overlay)
         main = (root / primary).read_bytes()
         extra = (root / overlay).read_bytes()
         if not main or not extra:
