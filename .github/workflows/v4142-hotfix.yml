@@ -28,6 +28,7 @@ jobs:
           sh -n source/vnext-issue69/service.sh
           sh -n source/vnext-issue69/tools/sdd-followup-coalesce.sh
           python3 -m unittest discover -s tests -p 'verify_followup_singleflight.py' -v
+          python3 -m unittest discover -s tests -p 'verify_v4142_webui_static_bundle.py' -v
       - name: Build deterministic hotfix candidate
         run: |
           set -euo pipefail
@@ -39,6 +40,13 @@ jobs:
           # Extract completely before grep: with pipefail, grep -q can SIGPIPE unzip.
           unzip -p "$zip" module.prop > /tmp/sdd-v4142-verify/module.prop
           unzip -p "$zip" service.sh > /tmp/sdd-v4142-verify/service.sh
+          unzip -p "$zip" webroot/index.html > /tmp/sdd-v4142-verify/index.html
+          unzip -p "$zip" webroot/app.js > /tmp/sdd-v4142-verify/app.js
+          unzip -p "$zip" webroot/app.css > /tmp/sdd-v4142-verify/app.css
+          ! grep -Eq '(href|src)="sdd-ui\\.(css|js)"' /tmp/sdd-v4142-verify/index.html
+          grep -Fq 'SDD module controls (bundled for pinned Core static routes)' /tmp/sdd-v4142-verify/app.js
+          grep -Fq 'SDD module styles (bundled for pinned Core static routes)' /tmp/sdd-v4142-verify/app.css
+          node --check /tmp/sdd-v4142-verify/app.js
           unzip -Z1 "$zip" > /tmp/sdd-v4142-verify/entries.txt
           grep -Fxq 'version=4.14.2' /tmp/sdd-v4142-verify/module.prop
           grep -Fxq 'versionCode=4140200' /tmp/sdd-v4142-verify/module.prop
