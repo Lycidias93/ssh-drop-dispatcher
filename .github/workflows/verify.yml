@@ -25,9 +25,18 @@ jobs:
     name: verify
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # Match the compiler embedded in the accepted v4.13.0 release binaries.
+      - name: Bind historical build toolchain
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.13"
+          cache: false
 
       - name: Verify shell syntax
         shell: bash
@@ -59,6 +68,11 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests -p 'verify_followup_singleflight.py' -v
+
+      - name: Verify next guarded module tool synchronization
+        run: |
+          sh -n source/vnext-issue2516/service.sh
+          python3 -m unittest discover -s tests -p 'verify_guarded_module_tool_sync.py' -v
 
       - name: Build RC4 secure standalone WebUI candidate
         shell: bash
