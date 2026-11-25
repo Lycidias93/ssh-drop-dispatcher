@@ -60,6 +60,11 @@ jobs:
           set -euo pipefail
           python3 -m unittest discover -s tests -p 'verify_followup_singleflight.py' -v
 
+      - name: Verify next guarded module tool synchronization
+        run: |
+          sh -n source/vnext-issue2516/service.sh
+          python3 -m unittest discover -s tests -p 'verify_guarded_module_tool_sync.py' -v
+
       - name: Build RC4 secure standalone WebUI candidate
         shell: bash
         run: |
