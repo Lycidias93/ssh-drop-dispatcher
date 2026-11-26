@@ -78,6 +78,7 @@ jobs:
         run: |
           sh -n source/vnext-issue2516/strict-scan-service.sh
           python3 tests/verify_strict_scan_selection.py
+          bash -n tools/pixel_local__sdd_v4144_stage_v1.sh
 
       - name: Build RC4 secure standalone WebUI candidate
         shell: bash
