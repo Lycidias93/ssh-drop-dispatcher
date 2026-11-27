@@ -1,0 +1,7 @@
+# V4.14.5 batched failures inventory candidate
+
+Follow-up to Heimnetz #2516. V4.14.4 postboot and verified delivery pass; exact same-run Pixel fixture measured 101 rows, 19.586s old adapter versus 0.603s CLI plus one batched AWK encode, parsed JSON equality. Fixture also covers quotes, backslashes, whitespace, UTF-8, control characters, empty inventory and CLI failure. The Android system AWK was verified. Module-specific adapter change; no generic template change. Preserve the existing Core 0.6.0 pin (cb991dc8d7d982defbe5e34c5c0e0908efa9b236).
+
+Build with tools/build_v4145_batched_inventory.py against the exact V4.14.4 ZIP SHA256 8107e07359cbb2d1513828a9ae2665bb700213bedd75223e071027882be0b575. The candidate 204950c064b7c07a1970868fd1e0d0113831f747630a1f97bea5b72df250143a (4877364 bytes) changes only bin/module-control-base and module.prop; delivery service and all runtime tools remain byte-identical. Version 4.14.5-batched-inventory-v1 / 4140500. The version-bound staging controller has a verified baseline preflight; it preserves V4.14.4 rollback and does not reboot.
+
+No installation, release, or channel promotion. Required: CI/review/merge and fresh provenance, scoped owner install approval, postboot exact identity and delivery, complete exact-device WebUI release audit including isolated changed-boolean Settings and real browser reload. Watchdog import/registry housekeeping is a separate measured optimization; no safety check was bypassed.
